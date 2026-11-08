@@ -916,7 +916,9 @@ static GtkWidget *page_keyboard(void)
 /* Date & time                                                              */
 /* ------------------------------------------------------------------------ */
 
-static GtkWidget *dt_clock, *dt_tz;
+static GtkWidget *dt_clock, *dt_region, *dt_city;
+static const char *const tz_regions[] = {"Africa", "America", "Antarctica", "Asia", "Atlantic",
+                                         "Australia", "Europe", "Indian", "Pacific", "UTC", NULL};
 
 static gboolean dt_tick(gpointer d)
 {
@@ -961,9 +963,36 @@ static void dt_done(gboolean ok, const char *output, gpointer data)
 	dt_tick(NULL);
 }
 
+/* region chosen: list its cities (a few dozen, instead of ~400 zones in one list) */
+static void dt_region_changed(GtkComboBox *c, gpointer select)
+{
+	const char *region = gtk_combo_box_get_active_id(c);
+	gtk_combo_box_text_remove_all(GTK_COMBO_BOX_TEXT(dt_city));
+	if (!region)
+		return;
+	if (strcmp(region, "UTC") == 0) {
+		gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(dt_city), "UTC", "UTC");
+	} else {
+		GPtrArray *zones = g_ptr_array_new_with_free_func(g_free);
+		char *p = g_build_filename(ZONEINFO, region, NULL);
+		tz_collect(p, region, zones);
+		g_free(p);
+		g_ptr_array_sort(zones, cmp_str);
+		for (guint i = 0; i < zones->len; i++) {
+			const char *z = zones->pdata[i];
+			char *label = g_strdelimit(g_strdup(z + strlen(region) + 1), "_", ' ');
+			gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(dt_city), z, label);
+			g_free(label);
+		}
+		g_ptr_array_free(zones, TRUE);
+	}
+	if (!select || !gtk_combo_box_set_active_id(GTK_COMBO_BOX(dt_city), select))
+		gtk_combo_box_set_active(GTK_COMBO_BOX(dt_city), 0);
+}
+
 static void dt_apply(GtkButton *b, gpointer d)
 {
-	const char *tz = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dt_tz));
+	const char *tz = gtk_combo_box_get_active_id(GTK_COMBO_BOX(dt_city));
 	if (!tz || strstr(tz, ".."))
 		return;
 	const char *argv[] = {"sh", "-c",
@@ -990,26 +1019,22 @@ static GtkWidget *page_datetime(void)
 	g_timeout_add_seconds(1, dt_tick, NULL);
 
 	s = section(body, "Time zone");
-	dt_tz = gtk_combo_box_text_new();
-	gtk_combo_box_set_wrap_width(GTK_COMBO_BOX(dt_tz), 3);
-	GPtrArray *zones = g_ptr_array_new_with_free_func(g_free);
-	static const char *const regions[] = {"Africa", "America", "Antarctica", "Asia", "Atlantic",
-	                                      "Australia", "Europe", "Indian", "Pacific", NULL};
-	for (int i = 0; regions[i]; i++) {
-		char *p = g_build_filename(ZONEINFO, regions[i], NULL);
-		tz_collect(p, regions[i], zones);
-		g_free(p);
-	}
-	g_ptr_array_add(zones, g_strdup("UTC"));
-	g_ptr_array_sort(zones, cmp_str);
-	for (guint i = 0; i < zones->len; i++)
-		gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(dt_tz), zones->pdata[i], zones->pdata[i]);
-	g_ptr_array_free(zones, TRUE);
+	dt_region = gtk_combo_box_text_new();
+	dt_city = gtk_combo_box_text_new();
+	for (int i = 0; tz_regions[i]; i++)
+		gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(dt_region), tz_regions[i], tz_regions[i]);
 	char *link = g_file_read_link("/etc/localtime", NULL);
-	if (link && g_str_has_prefix(link, ZONEINFO "/"))
-		gtk_combo_box_set_active_id(GTK_COMBO_BOX(dt_tz), link + strlen(ZONEINFO) + 1);
+	const char *cur = link && g_str_has_prefix(link, ZONEINFO "/") ? link + strlen(ZONEINFO) + 1 : "UTC";
+	char *region = g_strndup(cur, strcspn(cur, "/"));
+	g_signal_connect(dt_region, "changed", G_CALLBACK(dt_region_changed), NULL);
+	g_signal_handlers_block_by_func(dt_region, dt_region_changed, NULL);
+	gtk_combo_box_set_active_id(GTK_COMBO_BOX(dt_region), region);
+	g_signal_handlers_unblock_by_func(dt_region, dt_region_changed, NULL);
+	dt_region_changed(GTK_COMBO_BOX(dt_region), (gpointer)cur);
+	g_free(region);
 	g_free(link);
-	row(s, "Time zone", dt_tz);
+	row(s, "Region", dt_region);
+	row(s, "City", dt_city);
 	add_button(button_row(s), "_Apply", G_CALLBACK(dt_apply), NULL);
 	return page;
 }
@@ -1449,12 +1474,33 @@ static int askpass(const char *prompt)
 
 /* ------------------------------------------------------------------------ */
 
+/* Pages are built the first time they are shown, so Settings opens quickly.
+ * Each stack child is an empty box holding its page constructor. */
+typedef GtkWidget *(*PageFn)(void);
+
+static void page_build(GtkWidget *holder)
+{
+	PageFn make = g_object_get_data(G_OBJECT(holder), "make");
+	if (!make)
+		return;
+	g_object_set_data(G_OBJECT(holder), "make", NULL);
+	gint64 t0 = g_get_monotonic_time();
+	GtkWidget *p = make();
+	if (g_getenv("ML_SETTINGS_TIMING"))
+		g_printerr("page %-10s %6.1f ms\n", gtk_widget_get_name(holder), (g_get_monotonic_time() - t0) / 1000.0);
+	gtk_box_pack_start(GTK_BOX(holder), p, TRUE, TRUE, 0);
+	gtk_widget_show_all(p);
+}
+
 /* Bluetooth needs sudo: query it only when its page is opened, so that opening
  * Settings never asks for a password by itself */
 static void page_changed(GObject *stack, GParamSpec *pspec, gpointer d)
 {
 	static gboolean bt_loaded;
+	GtkWidget *child = gtk_stack_get_visible_child(GTK_STACK(stack));
 	const char *name = gtk_stack_get_visible_child_name(GTK_STACK(stack));
+	if (child)
+		page_build(child);
 	gtk_label_set_text(GTK_LABEL(status_label), "");
 	if (g_strcmp0(name, "bluetooth") == 0 && !bt_loaded) {
 		bt_loaded = TRUE;
@@ -1496,7 +1542,7 @@ int main(int argc, char **argv)
 
 	struct {
 		const char *id, *title;
-		GtkWidget *(*make)(void);
+		PageFn make;
 	} pages[] = {
 		{"network", "Network", page_network},       {"bluetooth", "Bluetooth", page_bluetooth},
 		{"display", "Display", page_display},       {"sound", "Sound", page_sound},
@@ -1505,13 +1551,16 @@ int main(int argc, char **argv)
 		{"packages", "Packages", page_packages},    {"about", "About", page_about},
 	};
 	for (size_t i = 0; i < G_N_ELEMENTS(pages); i++) {
-		GtkWidget *p = pages[i].make();
-		gtk_widget_show_all(p);
-		gtk_stack_add_titled(GTK_STACK(stack), p, pages[i].id, pages[i].title);
+		GtkWidget *holder = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+		gtk_widget_set_name(holder, pages[i].id);
+		g_object_set_data(G_OBJECT(holder), "make", pages[i].make);
+		gtk_widget_show(holder);
+		gtk_stack_add_titled(GTK_STACK(stack), holder, pages[i].id, pages[i].title);
 	}
 	g_signal_connect(stack, "notify::visible-child-name", G_CALLBACK(page_changed), NULL);
 	if (argc > 1)
 		gtk_stack_set_visible_child_name(GTK_STACK(stack), argv[1]);
+	page_changed(G_OBJECT(stack), NULL, NULL);   /* build the page shown first */
 	gtk_main();
 	return 0;
 }
