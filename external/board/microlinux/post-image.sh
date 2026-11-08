@@ -116,6 +116,12 @@ for d in "$B"/repo-root/*/; do
 	echo "$name|$ver|$f|$(sha256sum "$R/$f" | cut -d' ' -f1)|$(stat -c %s "$R/$f")|$desc|$dep|$sec" >> "$R/INDEX"
 done
 [ $bad = 0 ] || { echo "repository packages have unresolved libraries"; exit 1; }
+# the image packages (Firefox, EL7 runtime) are in the online repository too,
+# for systems booted from the base ISO
+while IFS='|' read -r name ver f sha size desc; do
+	cp "$P/$f" "$R/$f"
+	echo "$name|$ver|$f|$sha|$size|$desc||app" >> "$R/INDEX"
+done < "$P/INDEX"
 cp "$B/repo-root/SOURCES.txt" "$R/SOURCES.txt"
 msg "  $(grep -c . "$R/INDEX") packages, $(du -sm "$R" | cut -f1) MiB"
 

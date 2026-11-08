@@ -77,7 +77,7 @@ mlpkg verify
 ```
 
 The online repository is
-`https://github.com/ARuby25/microlinux-repo/releases/download/packages-<arch>`,
+`https://github.com/praneethashok14/microlinux-packagerepo/releases/download/packages-<arch>`,
 already listed in `/etc/mlpkg/repos.conf` (after the packages on the live
 medium). Every download is checked against the SHA-256 in the repository's INDEX.
 

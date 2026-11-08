@@ -1,3 +1,3 @@
 # Online package repository, added to /etc/mlpkg/repos.conf (@ARCH@ = aarch64 or x86_64).
 # scripts/publish-repo.sh uploads ../microlinux-repo/<arch>/ there.
-https://github.com/ARuby25/microlinux-repo/releases/download/packages-@ARCH@
+https://github.com/praneethashok14/microlinux-packagerepo/releases/download/packages-@ARCH@

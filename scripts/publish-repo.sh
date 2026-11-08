@@ -8,7 +8,8 @@
 #   ./scripts/publish-repo.sh             every architecture that has been built
 #   ./scripts/publish-repo.sh x86_64      one architecture
 #
-# Needs the GitHub CLI, logged in (gh auth login). Packages that are already
+# Needs the GitHub CLI, logged in (gh auth login), or a token for the account
+# in GH_TOKEN (used for this run only, never stored). Packages that are already
 # uploaded are skipped (file names contain the version), packages no longer
 # in the INDEX are deleted, and the INDEX is uploaded last, so a client never
 # sees an INDEX that names a file which isn't there yet.
@@ -24,13 +25,20 @@ ARCHES=${1:-$(for a in aarch64 x86_64; do [ -f "$REPO_DIR/$a/INDEX" ] && echo $a
 if ! gh repo view "$GH_REPO" >/dev/null 2>&1; then
 	echo "creating public repository $GH_REPO"
 	gh repo create "$GH_REPO" --public \
-		--description "MicroLinux package repository (mlpkg): software built from source with Buildroot for aarch64 and x86_64"
+		--description "MicroLinux package repository (mlpkg): software built from source with Buildroot for aarch64 and x86_64. OS: github.com/praneethashok14/microlinux"
 fi
 # the folder itself: README, INDEX and SOURCES.txt per architecture (packages are git-ignored)
 git -C "$REPO_DIR" remote get-url origin >/dev/null 2>&1 || git -C "$REPO_DIR" remote add origin "https://github.com/$GH_REPO.git"
 git -C "$REPO_DIR" add -A
 git -C "$REPO_DIR" diff --cached --quiet || git -C "$REPO_DIR" commit -q -m "Update package lists: $ARCHES"
-git -C "$REPO_DIR" push -q -u origin main
+if [ -n "$GH_TOKEN" ]; then
+	# authenticate this push with GH_TOKEN instead of any stored credential
+	git -C "$REPO_DIR" -c credential.helper= \
+		-c 'credential.helper=!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f' \
+		push -q -u origin main
+else
+	git -C "$REPO_DIR" push -q -u origin main
+fi
 
 for A in $ARCHES; do
 	D=$REPO_DIR/$A

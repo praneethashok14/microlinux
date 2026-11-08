@@ -17,7 +17,7 @@ A tiny, fully functional Linux distribution for **x86_64** and **aarch64**
   libraries. The test suite uses real CentOS 7 RPMs.
 - **Packages**: `mlpkg` with dependencies and an online repository of about 90
   applications (Python, Perl, Ruby, git, gdb, vim, tmux, nmap, mpv, …) at
-  [ARuby25/microlinux-repo](https://github.com/ARuby25/microlinux-repo).
+  [praneethashok14/microlinux-packagerepo](https://github.com/praneethashok14/microlinux-packagerepo).
 - **Installer**: `ml-install` writes a GPT disk with an ESP and an ext4 root
   (x86_64: also bootable from BIOS).
 
