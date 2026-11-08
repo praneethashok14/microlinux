@@ -700,20 +700,70 @@ static void snd_read(void)
 	snd_updating = FALSE;
 }
 
+/* Laptop codecs route Master -> Speaker / Headphone -> PCM, each with its own
+ * mute switch: when sound is wanted, switch on every output path (the codec's
+ * auto-mute still silences the speaker when headphones are plugged in). */
+static void snd_unmute_paths(void)
+{
+	static const char *const paths[] = {"Master", "Speaker", "Headphone", "PCM", "Front", "Line Out", NULL};
+	for (snd_mixer_elem_t *e = snd_mixer_first_elem(mixer); e; e = snd_mixer_elem_next(e)) {
+		const char *n = snd_mixer_selem_get_name(e);
+		for (int i = 0; paths[i]; i++) {
+			if (strcmp(n, paths[i]) != 0)
+				continue;
+			if (snd_mixer_selem_has_playback_switch(e))
+				snd_mixer_selem_set_playback_switch_all(e, 1);
+			/* a path left at 0 would keep everything silent: bring it to 80% */
+			long min, max, v;
+			if (e != mixer_elem && snd_mixer_selem_has_playback_volume(e)) {
+				snd_mixer_selem_get_playback_volume_range(e, &min, &max);
+				snd_mixer_selem_get_playback_volume(e, SND_MIXER_SCHN_FRONT_LEFT, &v);
+				if (v <= min)
+					snd_mixer_selem_set_playback_volume_all(e, min + (max - min) * 8 / 10);
+			}
+		}
+	}
+}
+
 static void snd_volume_changed(GtkRange *r, gpointer d)
 {
 	long min, max;
 	if (snd_updating)
 		return;
+	if (gtk_range_get_value(r) > 0) {
+		snd_unmute_paths();
+		snd_updating = TRUE;
+		gtk_switch_set_active(GTK_SWITCH(snd_mute), FALSE);
+		snd_updating = FALSE;
+	}
 	snd_mixer_selem_get_playback_volume_range(mixer_elem, &min, &max);
 	snd_mixer_selem_set_playback_volume_all(mixer_elem, min + (long)((max - min) * gtk_range_get_value(r) / 100.0 + 0.5));
 }
 
 static gboolean snd_mute_set(GtkSwitch *s, gboolean state, gpointer d)
 {
-	if (!snd_updating && snd_mixer_selem_has_playback_switch(mixer_elem))
-		snd_mixer_selem_set_playback_switch_all(mixer_elem, !state);
+	if (snd_updating)
+		return FALSE;
+	if (!state)
+		snd_unmute_paths();
+	else if (snd_mixer_selem_has_playback_switch(mixer_elem))
+		snd_mixer_selem_set_playback_switch_all(mixer_elem, 0);
 	return FALSE;
+}
+
+static void snd_test_done(gboolean ok, const char *output, gpointer data)
+{
+	if (ok)
+		set_status("Test sound played (front left, then front right).");
+	else
+		report_done(FALSE, output, "Test sound");
+}
+
+static void snd_test(GtkButton *b, gpointer d)
+{
+	const char *argv[] = {"speaker-test", "-t", "wav", "-c", "2", "-l", "1", NULL};
+	set_status("Playing a test sound ...");
+	run(argv, FALSE, NULL, snd_test_done, NULL);
 }
 
 static GtkWidget *page_sound(void)
@@ -736,6 +786,7 @@ static GtkWidget *page_sound(void)
 	snd_mute = gtk_switch_new();
 	g_signal_connect(snd_mute, "state-set", G_CALLBACK(snd_mute_set), NULL);
 	row(s, "Mute", snd_mute);
+	add_button(button_row(s), "_Test sound", G_CALLBACK(snd_test), NULL);
 	snd_read();
 	return page;
 }

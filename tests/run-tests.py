@@ -67,6 +67,8 @@ class VM:
                "-netdev", "user,id=n0", "-device", "virtio-net-pci,netdev=n0",
                # a NIC whose driver is a module (like real hardware): it must load by itself
                "-netdev", "user,id=n1", "-device", "e1000e,netdev=n1",
+               # Intel HD Audio, like a PC (output discarded)
+               "-audiodev", "none,id=snd0", "-device", "intel-hda", "-device", "hda-output,audiodev=snd0",
                *media, *extra,
                "-display", "none",
                "-chardev", f"socket,id=ser,path={self.ser_path},server=on,wait=off,logfile={os.path.join(RES, 'serial.log')},logappend=on",
@@ -355,6 +357,10 @@ def run_live_tests(args, rep):
         rep.check("T3", "User management and permissions", "tuser" in out and "Permission denied" in out, out.replace("\n", "; ")[:200])
         # as the desktop menu runs it: user, no terminal, no password prompt possible
         rc, out = vm.sh("su user -c 'setsid sh -c \"sudo -n true && echo sudo-ok; sudo -n -l /usr/sbin/poweroff\" </dev/null 2>&1'")
+        rc, out = vm.sh("cat /proc/asound/cards | head -n 2; amixer get Master 2>/dev/null | grep -o '\\[on\\]\\|\\[off\\]' | head -n1; "
+                        "su user -c 'timeout 20 speaker-test -t wav -c 2 -l 1 >/dev/null 2>&1' && echo played")
+        rep.check("S", "Sound: HDA card detected, mixer set up at boot, test sound plays", "HDA" in out and "played" in out and "[off]" not in out,
+                  out.replace("\n", "; ")[:200])
         rep.check("T4", "sudo for the live user without a password (menu actions)", "sudo-ok" in out and "/usr/sbin/poweroff" in out, out.replace("\n", "; ")[:200])
 
         # packages

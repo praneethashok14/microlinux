@@ -1,0 +1,23 @@
+#!/bin/sh
+# Sound: restore the saved mixer settings, or on the first boot apply ALSA's
+# defaults (alsactl init: speakers/headphones unmuted at a moderate volume).
+# Laptop codecs otherwise start muted. Saved again at shutdown.
+STATE=/var/lib/alsa/asound.state
+case "$1" in
+	start)
+		ls /dev/snd/controlC* >/dev/null 2>&1 || exit 0
+		printf "Setting up sound: "
+		if [ -f "$STATE" ] && alsactl -f "$STATE" restore >/dev/null 2>&1; then
+			echo "restored"
+		else
+			alsactl init >/dev/null 2>&1
+			echo "defaults"
+		fi
+		;;
+	stop)
+		ls /dev/snd/controlC* >/dev/null 2>&1 || exit 0
+		mkdir -p /var/lib/alsa
+		alsactl -f "$STATE" store 2>/dev/null
+		;;
+esac
+exit 0
