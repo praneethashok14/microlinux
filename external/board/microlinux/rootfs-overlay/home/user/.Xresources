@@ -25,4 +25,6 @@ XTerm*scrollBar: false
 XTerm*internalBorder: 6
 XTerm*selectToClipboard: true
 XTerm*termName: xterm-256color
-XTerm*locale: true
+! UTF-8 always; with locale: true xterm tries to start luit, which isn't installed
+XTerm*locale: false
+XTerm*utf8: 1
