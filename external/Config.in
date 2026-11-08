@@ -7,3 +7,4 @@ source "$BR2_EXTERNAL_MICROLINUX_PATH/package/el7-runtime/Config.in"
 endmenu
 source "$BR2_EXTERNAL_MICROLINUX_PATH/package/ml-settings/Config.in"
 source "$BR2_EXTERNAL_MICROLINUX_PATH/package/shim-signed-bin/Config.in"
+source "$BR2_EXTERNAL_MICROLINUX_PATH/package/ml-software/Config.in"

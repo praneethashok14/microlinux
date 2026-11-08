@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Software
+Comment=Browse, install, remove and update packages
+Icon=system-software-install
+Exec=ml-software
+Terminal=false
+Categories=System;PackageManager;

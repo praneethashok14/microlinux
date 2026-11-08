@@ -1,0 +1,8 @@
+config BR2_PACKAGE_ML_SOFTWARE
+	bool "ml-software (MicroLinux Software: package browser for mlpkg)"
+	depends on BR2_PACKAGE_LIBGTK3
+	depends on BR2_PACKAGE_ML_SETTINGS # ml-askpass
+	help
+	  Graphical front end for mlpkg: browse the package repository by
+	  category, search, install, remove and update packages. Published
+	  in the package repository (sudo mlpkg install ml-software).

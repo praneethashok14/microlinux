@@ -1218,6 +1218,42 @@ static void pkg_activated(GtkTreeView *v, GtkTreePath *p, GtkTreeViewColumn *c, 
 	g_free(name);
 }
 
+/* the full package browser: start it, or install it from the repository */
+static void pkg_software_done(gboolean ok, const char *output, gpointer data)
+{
+	pkg_load();
+	if (ok) {
+		const char *argv[] = {"ml-software", NULL};
+		g_spawn_async(NULL, (char **)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+		set_status("Software installed.");
+	} else {
+		report_done(FALSE, output, "Installing Software");
+	}
+}
+
+static void pkg_software(GtkButton *b, gpointer d)
+{
+	char *path = g_find_program_in_path("ml-software");
+	if (path) {
+		const char *argv[] = {path, NULL};
+		g_spawn_async(NULL, (char **)argv, NULL, 0, NULL, NULL, NULL, NULL);
+		g_free(path);
+		return;
+	}
+	GtkWidget *q = gtk_message_dialog_new(GTK_WINDOW(window), GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION,
+	                                      GTK_BUTTONS_YES_NO, "Install Software?");
+	gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(q),
+		"Software is a package browser with categories, search and updates. "
+		"It is installed from the package repository (about 50 KB).");
+	gint r = gtk_dialog_run(GTK_DIALOG(q));
+	gtk_widget_destroy(q);
+	if (r != GTK_RESPONSE_YES)
+		return;
+	const char *argv[] = {"mlpkg", "install", "ml-software", NULL};
+	set_status("Installing Software ...");
+	run(argv, TRUE, NULL, pkg_software_done, NULL);
+}
+
 static void pkg_column(const char *title, int col, gboolean expand)
 {
 	GtkCellRenderer *r = gtk_cell_renderer_text_new();
@@ -1266,6 +1302,7 @@ static GtkWidget *page_packages(void)
 	add_button(bb, "_Install", G_CALLBACK(pkg_action), "install");
 	add_button(bb, "_Remove", G_CALLBACK(pkg_action), "remove");
 	add_button(bb, "Refresh _lists", G_CALLBACK(pkg_update), NULL);
+	add_button(bb, "_Software ...", G_CALLBACK(pkg_software), NULL);
 	g_signal_connect(pkg_search, "search-changed", G_CALLBACK(pkg_filter_changed), NULL);
 	g_signal_connect(pkg_libs, "toggled", G_CALLBACK(pkg_filter_changed), NULL);
 	pkg_load();

@@ -118,6 +118,7 @@ for d in "$B"/repo-root/*/; do
 	echo "$name|$ver|$f|$(sha256sum "$R/$f" | cut -d' ' -f1)|$(stat -c %s "$R/$f")|$desc|$dep|$sec" >> "$R/INDEX"
 done
 [ $bad = 0 ] || { echo "repository packages have unresolved libraries"; exit 1; }
+cp "$B/repo-root/SOURCES.txt" "$B/repo-root/CATEGORIES" "$R/"
 # the image packages (Firefox, EL7 runtime) are in the online repository too,
 # for systems booted from the base ISO
 while IFS='|' read -r name ver f sha size desc; do
@@ -125,7 +126,6 @@ while IFS='|' read -r name ver f sha size desc; do
 	echo "$name|$ver|$f|$sha|$size|$desc||app" >> "$R/INDEX"
 	case "$name" in firefox) echo "$name|Internet & network" ;; *) echo "$name|System" ;; esac >> "$R/CATEGORIES"
 done < "$P/INDEX"
-cp "$B/repo-root/SOURCES.txt" "$B/repo-root/CATEGORIES" "$R/"
 if [ -f "$KEYS/repo/repo.key" ]; then
 	openssl dgst -sha256 -sign "$KEYS/repo/repo.key" -out "$R/INDEX.sig" "$R/INDEX"
 	openssl dgst -sha256 -verify "$BOARD/keys/repo.pub" -signature "$R/INDEX.sig" "$R/INDEX" >/dev/null
