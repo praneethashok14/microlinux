@@ -48,6 +48,10 @@ for A in $ARCHES; do
 	fi
 	# the defconfig in the repo is the source of truth: re-apply it every build
 	make O="$O" BR2_EXTERNAL="$W/src/external" microlinux_${A}_defconfig >/dev/null
+	# With per-package directories, target-finalize assembles target/ from the
+	# packages every time, but never deletes: start from an empty one so that
+	# renamed or removed overlay files and moved repository files can't linger.
+	rm -rf "${O:?}/target"
 	set -o pipefail
 	if ! make -j"$(nproc)" O="$O" 2>&1 | tee "$O/build.log" | { grep --line-buffered -E '^>>>|Error|error:' || true; }; then
 		echo "BUILD FAILED ($A) - see $O/build.log"; tail -40 "$O/build.log"; exit 1

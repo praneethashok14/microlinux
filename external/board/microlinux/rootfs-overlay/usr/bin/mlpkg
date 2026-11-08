@@ -316,15 +316,16 @@ auto=1}"
 
 # resolve NAME: print the dependencies of NAME that aren't installed (depth first), then NAME
 resolve() {
+	local name d   # local: the recursion below must not overwrite them
 	case " $RESOLVED " in *" $1 "*) return 0 ;; esac
 	RESOLVED="$RESOLVED $1"
 	lookup "$1" || die "package '$1' not found (try: sudo mlpkg update)"
-	set -- "$1" $P_DEPS
-	n=$1; shift
+	name=$1
+	set -- $P_DEPS
 	for d in "$@"; do
 		[ -f "$LIB/$d.info" ] || resolve "$d" || return 1
 	done
-	echo "$n"
+	echo "$name"
 }
 
 cmd_install() {
