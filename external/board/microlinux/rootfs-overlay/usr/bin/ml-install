@@ -139,7 +139,7 @@ UUID=$ESP_UUID   /boot/efi  vfat  defaults,umask=0077  0 2
 F
 echo "$HOST" > $T/etc/hostname
 sed -i "s/^127.0.1.1.*//" $T/etc/hosts; echo "127.0.1.1	$HOST" >> $T/etc/hosts
-rm -f $T/etc/sudoers.d/live
+rm -f $T/etc/sudoers.d/90-live
 echo 'SYSLOGD_ARGS="-s 2048 -b 3"' > $T/etc/default/syslogd   # persistent /var/log/messages, rotated
 sed -i 's|^file:///live/medium/packages$|# file:///live/medium/packages  (live medium only)|' $T/etc/mlpkg/repos.conf
 cp -a /etc/wpa_supplicant/wpa_supplicant.conf $T/etc/wpa_supplicant/ 2>/dev/null || true

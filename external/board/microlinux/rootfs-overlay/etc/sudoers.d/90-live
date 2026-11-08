@@ -1,0 +1,3 @@
+# Live session: no password for anything. Removed by ml-install on installed
+# systems. Must sort after 10-wheel (sudo applies the last matching rule).
+user ALL=(ALL:ALL) NOPASSWD: ALL

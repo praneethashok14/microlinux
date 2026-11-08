@@ -1,0 +1,4 @@
+# Members of wheel may run anything as root, with their own password.
+# sudo applies the LAST matching rule: files are read in name order, so the
+# password-free exceptions (90-*) must sort after this one.
+%wheel ALL=(ALL:ALL) ALL

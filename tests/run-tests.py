@@ -311,6 +311,9 @@ def run_live_tests(args, rep):
         rep.check("T2", "System logging (syslogd/logread)", rc == 0 and out.strip().endswith("1"), out)
         rc, out = vm.sh("adduser -D tuser && echo tuser:pw | chpasswd && su tuser -c 'id -un; touch /root/x' 2>&1; deluser --remove-home tuser; echo done")
         rep.check("T3", "User management and permissions", "tuser" in out and "Permission denied" in out, out.replace("\n", "; ")[:200])
+        # as the desktop menu runs it: user, no terminal, no password prompt possible
+        rc, out = vm.sh("su user -c 'setsid sh -c \"sudo -n true && echo sudo-ok; sudo -n -l /usr/sbin/poweroff\" </dev/null 2>&1'")
+        rep.check("T4", "sudo for the live user without a password (menu actions)", "sudo-ok" in out and "/usr/sbin/poweroff" in out, out.replace("\n", "; ")[:200])
 
         # packages
         rc, out = vm.sh("mlpkg list -i; mlpkg verify")
@@ -412,6 +415,15 @@ def run_installed_tests(args, rep, num, bios=False):
                         "mlpkg list -i | tail -n +2 | awk '{print $1}' | tr '\\n' ' '")
         rep.check(num, name, "ext4" in out and "mltest" in out and ("firmware=BIOS" if bios else "firmware=UEFI") in out,
                   out.replace("\n", "; "))
+        # shut down as the desktop user would (menu: sudo poweroff, no terminal, no password)
+        vm.send("su user -c 'sudo -n poweroff' </dev/null\n")
+        t0 = time.time()
+        while vm.proc.poll() is None and time.time() - t0 < 60 * SCALE:
+            vm._read()
+            time.sleep(0.2)
+        rep.check(num + "p", "Power off as 'user' (installed system, " + ("BIOS" if bios else "UEFI") + ")",
+                  vm.proc.poll() is not None, f"machine off after {time.time() - t0:.0f}s" if vm.proc.poll() is not None
+                  else "still running: " + vm.buf[-200:])
     except Exception as e:
         rep.check(num, name, False, str(e)[:200])
     return vm

@@ -1,0 +1,59 @@
+#!/bin/sh
+# shutdown - power off, reboot or halt the machine, now or later
+#
+#   shutdown [-P|-h|-r|-H] [TIME] [MESSAGE]     default: -P (power off) +1
+#   shutdown -c                                 cancel a pending shutdown
+#
+#   -P, -h, --poweroff   power off            TIME: now (= +0), +MINUTES, HH:MM
+#   -r, --reboot         reboot
+#   -H, --halt           halt (stop the CPU, leave the power on)
+#
+# MicroLinux uses BusyBox init, which has poweroff/reboot/halt but no
+# shutdown; this provides the usual command line on top of them.
+PIDFILE=/run/shutdown.pid
+action=poweroff when= msg=
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-P|-h|--poweroff) action=poweroff ;;
+		-r|--reboot)      action=reboot ;;
+		-H|--halt)        action=halt ;;
+		-c)               cancel=1 ;;
+		-k|--no-wall)     ;;
+		--help)           sed -n '2,13s/^# \{0,1\}//p' "$0"; exit 0 ;;
+		-*)               echo "shutdown: unknown option $1" >&2; exit 1 ;;
+		*)                if [ -z "$when" ]; then when=$1; else msg="$msg${msg:+ }$1"; fi ;;
+	esac
+	shift
+done
+[ "$(id -u)" = 0 ] || { echo "shutdown: must be root (try: sudo shutdown ...)" >&2; exit 1; }
+
+if [ -n "$cancel" ]; then
+	if [ -f "$PIDFILE" ] && kill "$(cat "$PIDFILE")" 2>/dev/null; then
+		rm -f "$PIDFILE"; echo "Shutdown cancelled."; logger -t shutdown "cancelled"
+	else
+		echo "No shutdown is scheduled."
+	fi
+	exit 0
+fi
+
+case "${when:-+1}" in
+	now|+0) delay=0 ;;
+	+[0-9]*) delay=$(( ${when#+} * 60 )) ;;
+	[0-9]*:[0-9]*)
+		target=$(date -d "$when" +%s 2>/dev/null) || { echo "shutdown: invalid time '$when'" >&2; exit 1; }
+		now=$(date +%s)
+		[ "$target" -gt "$now" ] || target=$((target + 86400))
+		delay=$((target - now)) ;;
+	*) echo "shutdown: invalid time '$when' (use now, +MINUTES or HH:MM)" >&2; exit 1 ;;
+esac
+
+if [ "$delay" = 0 ]; then
+	logger -t shutdown "$action now${msg:+: $msg}"
+	exec "/usr/sbin/$action"
+fi
+[ -f "$PIDFILE" ] && kill "$(cat "$PIDFILE")" 2>/dev/null   # replaces an earlier schedule
+( sleep "$delay" && rm -f "$PIDFILE" && exec "/usr/sbin/$action" ) </dev/null >/dev/null 2>&1 &
+echo $! > "$PIDFILE"
+at=$(date -d "@$(( $(date +%s) + delay ))" +%H:%M 2>/dev/null)
+echo "Shutdown ($action) scheduled for $at${msg:+: $msg}. Cancel with: sudo shutdown -c"
+logger -t shutdown "$action scheduled for $at${msg:+: $msg}"

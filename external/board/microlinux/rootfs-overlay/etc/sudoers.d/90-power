@@ -1,0 +1,4 @@
+# Desktop users may shut down and restart the machine without a password
+# (the menu's Power off / Reboot run sudo without a terminal). Kept by
+# ml-install. Must sort after 10-wheel (sudo applies the last matching rule).
+%users ALL=(root) NOPASSWD: /usr/sbin/poweroff, /usr/sbin/reboot, /usr/sbin/halt, /usr/sbin/shutdown

@@ -5,3 +5,5 @@ HISTCONTROL=ignoredups
 alias ls='ls --color=auto'
 alias ll='ls -lh'
 alias grep='grep --color=auto'
+# shutting down needs root; sudo allows it without a password (/etc/sudoers.d/90-power)
+alias poweroff='sudo poweroff' reboot='sudo reboot' halt='sudo halt' shutdown='sudo shutdown'
