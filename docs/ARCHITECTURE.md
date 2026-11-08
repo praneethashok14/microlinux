@@ -19,13 +19,13 @@ UEFI firmware                                    BIOS (x86_64 only)
      (GRUB 2.12, modules + small config embedded)     USB stick: hybrid MBR (GRUB boot_hybrid.img)
        ├─ grub.cfg next to it?  → installed system (ESP)    installed disk: BIOS boot partition
        └─ else search /boot/grub/microlinux-live.id → live medium
-            └─ grub.cfg menu: live / to-RAM / safe graphics / text / persistence /
-                              recovery / emergency shell / verbose / no-modules / firmware setup
+            └─ grub.cfg menu: live / to-RAM / safe graphics / text /
+                              recovery / emergency shell / verbose / no saved changes / no-modules / firmware setup
                  └─ /boot/vmlinuz (Linux 6.18 LTS) + initramfs.cpio.gz (BusyBox, ~1.5 MB)
                       /init:
                         live:      find LABEL=MICROLINUX → mount iso9660
                                    → loop-mount /live/rootfs.sqfs (ro)
-                                   → overlayfs (upper: tmpfs, or ext4 with ml.persist=)
+                                   → overlayfs (upper: the stick's MLPERSIST ext4 partition, else tmpfs)
                         installed: root=UUID=… → mount ext4
                         → switch_root → /sbin/init (BusyBox init)
                              rcS → S01 syslogd, S02 klogd, S10 udev (eudev, module autoload),
@@ -36,7 +36,7 @@ UEFI firmware                                    BIOS (x86_64 only)
 ```
 
 Kernel command-line options (all documented in `grub.cfg` and `initramfs/init`):
-`ml.live=`, `ml.toram`, `ml.persist=`, `ml.break`, `ml.debug`, `ml.wait=`,
+`ml.live=`, `ml.toram`, `ml.persist=`, `ml.nopersist`, `ml.break`, `ml.debug`, `ml.wait=`,
 `ml.nox`, `ml.recovery`, `ml.nomodules`, `ml.nontp`, `ml.res=WxH`, `ml.keymap=`,
 plus standard `root=`, `rootfstype=`, `rootflags=`, `nomodeset`, `quiet`, `loglevel=`.
 

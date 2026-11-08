@@ -25,7 +25,7 @@ I="$B/initramfs-root"
 rm -rf "$I"; mkdir -p "$I"/{bin,sbin,lib,dev,proc,sys,run,newroot,live,etc}
 ln -s lib "$I/lib64"
 cp "$T/usr/bin/busybox" "$I/bin/busybox"
-for a in sh mount umount mkdir cat sleep findfs blkid cp ln rmdir switch_root setsid cttyhack \
+for a in sh mount umount mkdir cat sleep findfs blkid cp ln rmdir switch_root setsid cttyhack readlink basename \
 	ls dmesg echo grep losetup mdev ps kill vi less mkfs.ext2 fsck df free test [ ; do
 	ln -sf busybox "$I/bin/$a"
 done

@@ -215,8 +215,45 @@ def cdrom(iso):
             "-device", "scsi-cd,drive=cd,bus=scsi0.0"]
 
 
-def usb_stick(image):
-    return ["-drive", f"if=none,id=stick,file={image},format=raw,readonly=on", "-device", "usb-storage,drive=stick"]
+def usb_stick(image, writable=False):
+    ro = "" if writable else ",readonly=on"
+    return ["-drive", f"if=none,id=stick,file={image},format=raw{ro}", "-device", "usb-storage,drive=stick"]
+
+
+def run_persist_tests(args, rep):
+    """ml-persist on a USB stick written from the ISO, then reboot (UEFI, and BIOS on x86_64)."""
+    stick = os.path.join(RUN, "stick.img")
+    shutil.copy(args.iso, stick)
+    with open(stick, "r+b") as f:
+        f.truncate(2 * 1024 ** 3)            # a 2 GiB stick with the ISO written to its start
+    vm = VM(usb_stick(stick, writable=True))
+    try:
+        login(vm, timeout=180)
+        rc, out = vm.sh("ml-persist -y 2>&1 | tail -n 3; echo kept-$$ > /home/user/persist-marker; "
+                        "cat /home/user/persist-marker; sync", 180)
+        marker = out.strip().splitlines()[-1] if out.strip() else ""
+        rep.check("S1", "ml-persist creates a persistence partition on the USB stick", rc == 0 and "Done." in out,
+                  out.replace("\n", "; ")[:200])
+    except Exception as e:
+        rep.check("S1", "ml-persist creates a persistence partition on the USB stick", False, str(e)[:200])
+        vm.stop()
+        return
+    vm.stop()
+    for num, bios in (("S2", False), ("S3", True)):
+        if bios and ARCH != "x86_64":
+            continue
+        fw = "BIOS" if bios else "UEFI"
+        vm = VM(usb_stick(stick, writable=True), bios=bios)
+        try:
+            login(vm, timeout=180)
+            rc, out = vm.sh("cat /home/user/persist-marker; findmnt -no SOURCE,FSTYPE /live/cow; "
+                            "[ -d /sys/firmware/efi ] && echo firmware=UEFI || echo firmware=BIOS")
+            rep.check(num, f"Changes kept after reboot from the stick ({fw})",
+                      marker.startswith("kept-") and marker in out and "ext4" in out and f"firmware={fw}" in out,
+                      out.replace("\n", "; ")[:200])
+        except Exception as e:
+            rep.check(num, f"Changes kept after reboot from the stick ({fw})", False, str(e)[:200])
+        vm.stop()
 
 
 def boot_check(num, name, rep, media, bios, shot=None):
@@ -455,6 +492,7 @@ def main():
     vm.stop()
     if ARCH == "x86_64":
         run_bios_tests(args, rep)
+    run_persist_tests(args, rep)
     if args.install and any(r[0] == "I1" and r[2] == "PASS" for r in rep.rows):
         run_installed_tests(args, rep, "I2").stop()
         if ARCH == "x86_64":

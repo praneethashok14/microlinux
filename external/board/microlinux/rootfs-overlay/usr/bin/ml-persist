@@ -1,0 +1,88 @@
+#!/bin/sh
+# ml-persist - keep changes on the live USB stick
+#
+#   sudo ml-persist [-y] [--size SIZE]      SIZE: e.g. 2G, 500M (default: all free space)
+#
+# Run from the live system booted from a USB stick (or other writable disk)
+# that the MicroLinux ISO was written to. Creates an ext4 partition labelled
+# MLPERSIST in the free space after the image, without touching the system
+# part, and copies the changes made in this session to it. From the next boot
+# on, everything you change or install (files, settings, mlpkg packages) is
+# kept there. Boot menu "Troubleshooting > Live without saved changes"
+# (ml.nopersist) starts clean once; deleting the partition removes them for good.
+set -e
+YES=; SIZE=
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-y) YES=1 ;;
+		--size) SIZE=$2; shift ;;
+		-h|--help) sed -n '2,14s/^# \{0,1\}//p' "$0"; exit 0 ;;
+		*) echo "ml-persist: unknown option $1 (see --help)" >&2; exit 1 ;;
+	esac
+	shift
+done
+die() { echo "ml-persist: $*" >&2; exit 1; }
+[ "$(id -u)" = 0 ] || die "run as root: sudo ml-persist"
+[ -d /live/rootfs/usr ] || die "not running from the MicroLinux live medium"
+
+# the disk the live system was started from
+src=$(findmnt -no SOURCE /live/medium 2>/dev/null || true)
+[ -n "$src" ] || src=$(findfs LABEL=MICROLINUX 2>/dev/null || true)
+[ -b "$src" ] || die "cannot find the live medium (booted with 'copy to RAM' and the stick removed?)"
+name=${src##*/}
+if [ -e "/sys/class/block/$name/partition" ]; then
+	disk=$(basename "$(readlink -f "/sys/class/block/$name/..")")
+else
+	disk=$name
+fi
+DISK=/dev/$disk
+case "$disk" in sr*) die "the live medium $DISK is a CD/DVD (read-only); write the ISO to a USB stick" ;; esac
+[ "$(cat "/sys/class/block/$disk/ro")" = 0 ] || die "$DISK is read-only"
+
+existing=$(lsblk -lnpo NAME,LABEL "$DISK" | awk '$2 == "MLPERSIST" { print $1; exit }')
+[ -z "$existing" ] || { echo "$DISK already has a persistence partition ($existing). Nothing to do."; exit 0; }
+
+sectors=$(cat "/sys/class/block/$disk/size")
+used_end=$(sfdisk -d "$DISK" 2>/dev/null | sed -n 's/.*start= *\([0-9]*\), size= *\([0-9]*\).*/\1 \2/p' |
+	awk 'BEGIN { m = 0 } { e = $1 + $2; if (e > m) m = e } END { print m }')
+free_mib=$(( (sectors - used_end - 34) / 2048 ))
+[ "$free_mib" -ge 256 ] || die "$DISK has only ${free_mib} MiB free after the system; need at least 256 MiB"
+
+echo "Live medium: $DISK ($(( sectors / 2048 )) MiB, $(lsblk -dno MODEL "$DISK" | sed 's/ *$//'))"
+echo "Free space after the system: $free_mib MiB"
+echo "Will create an ext4 partition 'MLPERSIST' of ${SIZE:-$free_mib MiB (all free space)} there."
+echo "The system part of the stick is not changed."
+if [ -z "$YES" ]; then
+	printf "Continue? [y/N] "; read -r ans
+	case "$ans" in y|Y|yes|YES) ;; *) die "aborted" ;; esac
+fi
+
+# The ISO's GPT has its backup header at the end of the image, not of the
+# stick: move it to the end of the disk, then add the partition.
+echo "==> partition table"
+sfdisk --relocate gpt-bak-std "$DISK" >/dev/null 2>&1 || true
+echo ",${SIZE:-},L" | sfdisk --append --no-reread --no-tell-kernel -q "$DISK" ||
+	die "sfdisk could not add the partition"
+# the appended partition is the last one listed; tell the kernel about it only
+# (the stick is in use, so the whole table can't be re-read)
+PART=$(sfdisk -d "$DISK" | grep '^/dev/' | tail -n1 | cut -d' ' -f1)
+nr=$(echo "$PART" | sed 's/.*[^0-9]//')
+partx -a -n "$nr" "$DISK" 2>/dev/null || true
+n=0; while [ ! -b "$PART" ] && [ $n -lt 10 ]; do sleep 1; n=$((n + 1)); done
+[ -b "$PART" ] || die "new partition $PART did not appear; reboot and run ml-persist again"
+
+echo "==> filesystem on $PART"
+mkfs.ext4 -q -F -L MLPERSIST "$PART"
+
+echo "==> saving this session's changes"
+mkdir -p /mnt/ml-persist
+mount "$PART" /mnt/ml-persist
+mkdir -p /mnt/ml-persist/upper /mnt/ml-persist/work
+cp -a /live/cow/upper/. /mnt/ml-persist/upper/ 2>/dev/null || echo "    (some files could not be copied; they will be lost at reboot)"
+sync
+umount /mnt/ml-persist
+rmdir /mnt/ml-persist
+
+echo
+echo "Done. From the next boot on, changes are kept on $PART."
+echo "(Boot menu > Troubleshooting > 'Live without saved changes' starts clean once.)"

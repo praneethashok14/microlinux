@@ -8,14 +8,31 @@
 | copy system to RAM | loads the system (and packages) into RAM; the medium can be removed |
 | safe graphics | `nomodeset`: firmware framebuffer only (try this if the screen stays black) |
 | text mode | no desktop (`ml.nox`); log in on tty1-3 or serial |
-| persistent | keeps changes on an ext4 partition labelled `MLPERSIST` (`mkfs.ext4 -L MLPERSIST /dev/sdX2`) |
 | Troubleshooting → Recovery | root shell, only logging and udev started |
 | Troubleshooting → Emergency | shell inside the initramfs, before the root filesystem is mounted |
 | Troubleshooting → Verbose | all kernel and init messages |
 | Troubleshooting → no optional modules | skip Firefox/EL7 packages |
+| Troubleshooting → live without saved changes | ignore the `ml-persist` partition for this boot (`ml.nopersist`) |
 
 x86_64 images boot from BIOS and UEFI, as a CD/DVD or written to a USB stick
 (`dd if=microlinux-x86_64.iso of=/dev/sdX bs=4M`). aarch64 images boot from UEFI.
+
+### Keeping changes on the USB stick (persistence)
+
+By default the live system keeps changes in RAM, so they are lost at reboot.
+On a USB stick, run once:
+
+```sh
+sudo ml-persist              # or: sudo ml-persist --size 4G
+```
+
+It creates an ext4 partition labelled `MLPERSIST` in the free space after the
+image (the system part of the stick isn't changed) and copies this session's
+changes to it. Every following boot from that stick keeps your files,
+settings and installed packages there automatically. Only a `MLPERSIST`
+partition on the stick you booted from is used. To start clean once, choose
+Troubleshooting → "Live without saved changes". To discard the changes for
+good, delete the partition.
 
 Logins: `user` / `live`, `root` / `microlinux`. In the live system `user` can
 use `sudo` without a password. Installed systems ask you to set both passwords.
@@ -94,7 +111,7 @@ Two kinds of packages:
   under `/opt/<name>`.
 
 On the live system, installed packages live in RAM (or on the persistence
-partition with the "persistent" boot entry). On an installed system they are
+partition made by `ml-persist`). On an installed system they are
 on disk. `ml-install` copies image packages to the new installation;
 repository packages are installed on the installed system itself.
 

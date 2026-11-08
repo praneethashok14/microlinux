@@ -3,10 +3,12 @@
 #
 # Live mode (default):   find the medium (ml.live=LABEL=MICROLINUX), mount
 #                        /live/rootfs.sqfs read-only and put a writable overlay
-#                        (tmpfs, or ext4 with ml.persist=) on top.
+#                        on top: an ext4 partition labelled MLPERSIST on the
+#                        same disk as the medium (made by ml-persist), the
+#                        device given with ml.persist=, or else tmpfs.
 # Installed mode:        root=UUID=... / root=/dev/... mounts an ext4 root.
 #
-# Kernel parameters: ml.live= ml.toram ml.persist= ml.break ml.debug
+# Kernel parameters: ml.live= ml.toram ml.persist= ml.nopersist ml.break ml.debug
 #                    ml.wait=<seconds> root= rootfstype= rootflags= ro rw
 export PATH=/bin:/sbin
 
@@ -68,6 +70,17 @@ find_dev() {
 	return 1
 }
 
+# MLPERSIST partition on the same disk as DEV (the live medium), if any
+persist_on_medium() {
+	n=${1##*/}
+	if [ -e "/sys/class/block/$n/partition" ]; then n=$(basename "$(readlink -f "/sys/class/block/$n/..")"); fi
+	for p in /sys/class/block/"$n"/"$n"*; do
+		[ -e "$p/partition" ] || continue
+		blkid "/dev/${p##*/}" 2>/dev/null | grep -q 'LABEL="MLPERSIST"' && { echo "/dev/${p##*/}"; return 0; }
+	done
+	return 1
+}
+
 mount_live() {
 	spec=$(getarg ml.live || echo LABEL=MICROLINUX)
 	mount -t tmpfs -o mode=0755 live /live
@@ -92,14 +105,18 @@ mount_live() {
 	fi
 	mount -t squashfs -o loop,ro "$sqfs" /live/rootfs || die "cannot mount $sqfs"
 
-	if p=$(getarg ml.persist); then
-		if pdev=$(WAIT=10 find_dev "$p") && mount -t ext4 "$pdev" /live/cow; then
-			log "persistence on $pdev"
-		else
-			log "persistence device $p not usable, changes will be lost on reboot"
-			mount -t tmpfs -o mode=0755 cow /live/cow
-		fi
+	pdev=
+	if getarg ml.nopersist >/dev/null; then
+		log "ml.nopersist: saved changes are not used"
+	elif p=$(getarg ml.persist); then
+		pdev=$(WAIT=10 find_dev "$p") || log "persistence device $p not found"
 	else
+		pdev=$(persist_on_medium "$dev") || pdev=
+	fi
+	if [ -n "$pdev" ] && mount -t ext4 "$pdev" /live/cow; then
+		log "persistence on $pdev: changes are saved"
+	else
+		[ -n "$pdev" ] && log "cannot mount $pdev, changes will be lost on reboot"
 		mount -t tmpfs -o mode=0755 cow /live/cow
 	fi
 	mkdir -p /live/cow/upper /live/cow/work
