@@ -5,3 +5,4 @@ source "$BR2_EXTERNAL_MICROLINUX_PATH/package/ncurses5-compat/Config.in"
 source "$BR2_EXTERNAL_MICROLINUX_PATH/package/firefox-bin/Config.in"
 source "$BR2_EXTERNAL_MICROLINUX_PATH/package/el7-runtime/Config.in"
 endmenu
+source "$BR2_EXTERNAL_MICROLINUX_PATH/package/ml-settings/Config.in"

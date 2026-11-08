@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<!-- The desktop: the system configuration plus your own settings
+     (~/.config/microlinux/jwm.xml, written by Settings). -->
+<JWM>
+  <Include>/etc/system.jwmrc</Include>
+  <Include>$HOME/.config/microlinux/jwm.xml</Include>
+</JWM>

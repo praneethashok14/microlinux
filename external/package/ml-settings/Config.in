@@ -1,0 +1,9 @@
+config BR2_PACKAGE_ML_SETTINGS
+	bool "ml-settings (MicroLinux settings application)"
+	depends on BR2_PACKAGE_LIBGTK3
+	select BR2_PACKAGE_ALSA_LIB
+	help
+	  GTK 3 settings application for MicroLinux: network and Wi-Fi,
+	  Bluetooth, display, sound, wallpaper, keyboard, date and time,
+	  password, packages (mlpkg) and system information. Privileged
+	  changes go through sudo -A with a graphical password prompt.

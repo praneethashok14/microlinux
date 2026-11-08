@@ -45,6 +45,28 @@ Alt+Tab, Alt+F4, Ctrl+Alt+Del task manager. Resolution: menu → Display, or
 `ml-display set 1920x1080` (add `ml.res=1920x1080` to the kernel command line to
 set it at boot).
 
+## Settings
+
+**Settings** (menu → Settings, the tray button, or Super+I; `ml-settings` from a
+terminal) covers the common configuration:
+
+| Page | |
+|------|--|
+| Network | interfaces and addresses, Wi-Fi scan and connect, connection test |
+| Bluetooth | power, scan, pair/connect/remove devices |
+| Display | resolution, or automatic; kept for future logins |
+| Sound | volume and mute |
+| Appearance | wallpaper (default gradient, solid colour or a picture), dark mode for applications |
+| Keyboard | layout; kept for future logins |
+| Date & Time | clock, time zone, synchronise now |
+| Users | change your password |
+| Packages | browse, search, install and remove packages (mlpkg) |
+| About | system information; install to disk, keep changes on USB, system log |
+
+Changes that need administrator rights go through `sudo`: on an installed
+system a password dialog asks for your password. `ml-settings PAGE` opens a
+page directly (e.g. `ml-settings packages`).
+
 ## Network
 
 Wired interfaces get DHCP automatically. `netcfg status`, `netcfg test`.

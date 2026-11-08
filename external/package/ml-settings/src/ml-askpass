@@ -1,0 +1,3 @@
+#!/bin/sh
+# Password prompt for sudo -A (SUDO_ASKPASS), used by ml-settings.
+exec /usr/bin/ml-settings --askpass "$@"

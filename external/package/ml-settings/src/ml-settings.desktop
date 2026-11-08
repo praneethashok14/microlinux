@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+Comment=Network, Bluetooth, display, sound, appearance, packages and more
+Icon=preferences-system
+Exec=ml-settings
+Terminal=false
+Categories=Settings;System;

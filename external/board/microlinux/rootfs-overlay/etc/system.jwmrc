@@ -2,6 +2,8 @@
 <!-- MicroLinux desktop: JWM configuration. Users can copy it to ~/.jwmrc. -->
 <JWM>
   <RootMenu onroot="13" height="24" label="MicroLinux">
+    <Program icon="preferences-system" label="Settings">ml-settings</Program>
+    <Separator/>
     <Program icon="utilities-terminal" label="Terminal">xterm</Program>
     <Program icon="system-file-manager" label="Files">pcmanfm</Program>
     <Program icon="web-browser" label="Firefox">firefox</Program>
@@ -14,9 +16,9 @@
       <Program icon="utilities-system-monitor" label="Task manager">xterm -T "Task manager" -e htop</Program>
       <Program icon="computer" label="System information">xterm -T "System information" -geometry 90x24 -hold -e ml-sysinfo</Program>
       <Program icon="computer" label="Hardware">xterm -T Hardware -geometry 110x40 -e sh -c 'sudo ml-hwinfo | less -R'</Program>
-      <Program icon="network-wired" label="Network">xterm -T Network -geometry 100x30 -e sh -c 'netcfg status; echo; netcfg test; echo; echo "Wi-Fi: sudo netcfg wifi-scan  /  sudo netcfg wifi SSID PASSWORD"; exec bash'</Program>
-      <Program icon="bluetooth" label="Bluetooth">xterm -T Bluetooth -e bluetoothctl</Program>
-      <Program icon="package-x-generic" label="Packages">xterm -T Packages -geometry 110x30 -e sh -c 'mlpkg list; echo; echo "sudo mlpkg install NAME  /  sudo mlpkg remove NAME"; exec bash'</Program>
+      <Program icon="network-wired" label="Network (terminal)">xterm -T Network -geometry 100x30 -e sh -c 'netcfg status; echo; netcfg test; echo; echo "Wi-Fi: sudo netcfg wifi-scan  /  sudo netcfg wifi SSID PASSWORD"; exec bash'</Program>
+      <Program icon="bluetooth" label="Bluetooth">ml-settings bluetooth</Program>
+      <Program icon="package-x-generic" label="Packages">ml-settings packages</Program>
       <Program icon="text-x-generic" label="System log">xterm -T "System log" -geometry 120x35 -e sudo ml-log -f</Program>
       <Program icon="drive-harddisk" label="Install MicroLinux to disk">xterm -T Installer -geometry 100x30 -e sh -c 'sudo ml-install; echo; printf "Press Enter to close"; read x'</Program>
     </Menu>
@@ -36,6 +38,7 @@
     <TrayButton icon="utilities-terminal" popup="Terminal">exec:xterm</TrayButton>
     <TrayButton icon="system-file-manager" popup="Files">exec:pcmanfm</TrayButton>
     <TrayButton icon="web-browser" popup="Firefox">exec:firefox</TrayButton>
+    <TrayButton icon="preferences-system" popup="Settings">exec:ml-settings</TrayButton>
     <Spacer width="6"/>
     <TaskList maxwidth="240"/>
     <Pager labeled="true"/>
@@ -108,6 +111,8 @@
   <IconPath>/usr/share/icons/Adwaita/scalable/actions</IconPath>
   <IconPath>/usr/share/icons/Adwaita/scalable/mimetypes</IconPath>
   <IconPath>/usr/share/icons/Adwaita/scalable/legacy</IconPath>
+  <!-- Adwaita keeps its full-colour application icons only at fixed sizes -->
+  <IconPath>/usr/share/icons/Adwaita/48x48/legacy</IconPath>
   <IconPath>/usr/share/icons/Adwaita/symbolic/apps</IconPath>
   <IconPath>/usr/share/icons/Adwaita/symbolic/places</IconPath>
   <IconPath>/usr/share/icons/Adwaita/symbolic/devices</IconPath>
@@ -137,6 +142,7 @@
   <Key mask="4" key="Return">exec:xterm</Key>
   <Key mask="4" key="e">exec:pcmanfm</Key>
   <Key mask="4" key="w">exec:firefox</Key>
+  <Key mask="4" key="i">exec:ml-settings</Key>
   <Key mask="4" key="Right">rdesktop</Key>
   <Key mask="4" key="Left">ldesktop</Key>
   <Key mask="CA" key="Delete">exec:xterm -T "Task manager" -e htop</Key>

@@ -9,7 +9,8 @@ A tiny, fully functional Linux distribution for **x86_64** and **aarch64**
 - **Real Linux userland**: glibc, BusyBox, bash, util-linux, e2fsprogs, parted,
   iproute2, wpa_supplicant, BlueZ, OpenSSH client, curl, sudo, htop, nano/vi, strace.
 - **Desktop**: Xorg + JWM (panel, menu, task list, tray, clock), xterm,
-  PCManFM file manager, resolution switching.
+  PCManFM file manager, and a Settings app (network/Wi-Fi, Bluetooth, display,
+  sound, wallpaper, keyboard, time zone, password, packages).
 - **Browser**: official Mozilla Firefox ESR, shipped as an optional package.
 - **EL7 binary compatibility**: runs RHEL/CentOS 7 binaries of the same
   architecture natively (glibc symbol versions + compat libraries), with an
