@@ -229,7 +229,8 @@ def run_persist_tests(args, rep):
     vm = VM(usb_stick(stick, writable=True))
     try:
         login(vm, timeout=180)
-        rc, out = vm.sh("ml-persist -y 2>&1 | tail -n 3; echo kept-$$ > /home/user/persist-marker; "
+        # the marker is made before ml-persist, which saves the session's changes
+        rc, out = vm.sh("echo kept-$$ > /home/user/persist-marker; ml-persist -y 2>&1 | tail -n 3; "
                         "cat /home/user/persist-marker; sync", 180)
         marker = out.strip().splitlines()[-1] if out.strip() else ""
         rep.check("S1", "ml-persist creates a persistence partition on the USB stick", rc == 0 and "Done." in out,
@@ -373,7 +374,7 @@ def run_live_tests(args, rep):
             rep.check("P3", "Install from the repository with dependencies (python3, git, wget), and use them",
                       rc == 0 and "py " in out and "git version" in out and "GNU Wget" in out, out.replace("\n", "; ")[:300])
             rc, out = vm.sh("mlpkg remove python3 git wget && mlpkg autoremove | grep -c '^removed'; "
-                            "command -v python3 git || echo gone; readlink /usr/bin/wget; mlpkg list -i | grep -c 'installed' || true", 300)
+                            "ls /usr/bin/python3 /usr/bin/git 2>/dev/null || echo gone; readlink /usr/bin/wget; mlpkg list -i | grep -c 'installed' || true", 300)
             rep.check("P4", "Remove packages + autoremove dependencies (busybox wget restored)",
                       "gone" in out and "/bin/busybox" in out, out.replace("\n", "; ")[:200])
             httpd.shutdown()

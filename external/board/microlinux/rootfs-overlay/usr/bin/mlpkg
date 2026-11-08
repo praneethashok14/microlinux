@@ -399,7 +399,7 @@ cmd_verify() {
 		n=${inf##*/}; n=${n%.info}
 		[ -z "$1" ] || [ "$1" = "$n" ] || continue
 		if is_files_pkg "$n"; then
-			miss=$(while read -r f; do [ -e "$f" ] || [ -L "$f" ] || echo "$f"; done < "$LIB/$n.files" | grep -c .)
+			miss=$(while read -r f; do [ -e "$f" ] || [ -L "$f" ] || echo "$f"; done < "$LIB/$n.files" | wc -l)
 			if [ "$miss" = 0 ]; then echo "ok      $n ($(grep -c . "$LIB/$n.files") files)"; else echo "MISSING $n ($miss files)"; rc=1; fi
 			continue
 		fi
