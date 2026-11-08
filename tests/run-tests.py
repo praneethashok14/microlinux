@@ -65,6 +65,8 @@ class VM:
                "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-tablet",
                "-device", "virtio-rng-pci",
                "-netdev", "user,id=n0", "-device", "virtio-net-pci,netdev=n0",
+               # a NIC whose driver is a module (like real hardware): it must load by itself
+               "-netdev", "user,id=n1", "-device", "e1000e,netdev=n1",
                *media, *extra,
                "-display", "none",
                "-chardev", f"socket,id=ser,path={self.ser_path},server=on,wait=off,logfile={os.path.join(RES, 'serial.log')},logappend=on",
@@ -331,6 +333,8 @@ def run_live_tests(args, rep):
         rc, out = vm.sh("for i in $(seq 30); do ip -4 -br addr | grep -q '10.0.2' && break; sleep 1; done; ip -4 -br addr | grep -v lo; "
                         "cat /etc/resolv.conf | grep nameserver", 45)
         rep.check("5a", "Ethernet + DHCP", rc == 0 and "10.0.2.15" in out, out.replace("\n", "; "))
+        rc, out = vm.sh("lsmod | grep -o '^e1000e'; for d in /sys/class/net/*/device/driver; do basename $(readlink $d); done | sort -u | tr '\\n' ' '")
+        rep.check("5f", "Driver modules load automatically at boot (Intel e1000e NIC)", "e1000e" in out, out.replace("\n", "; "))
         rc, out = vm.sh("nslookup www.mozilla.org 2>&1 | tail -n 3 | tr '\\n' ' '", 30)
         rep.check("5b", "DNS resolution", rc == 0 and ("Address" in out), out[:200])
         rc, out = vm.sh("curl -sS -o /dev/null -w 'HTTP %{http_code} TLS-verify=%{ssl_verify_result}' https://www.mozilla.org/", 40)

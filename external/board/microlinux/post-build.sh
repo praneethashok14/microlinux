@@ -82,6 +82,16 @@ if [ -f "$T/$L/loaders/libpixbufloader-svg.so" ] && ! grep -q 'pixbufloader-svg'
 EOC
 fi
 
+# Buildroot's S10udevd starts udevd in the background and triggers the
+# coldplug events at once: events sent before udevd listens are lost, and
+# drivers that are modules (most real NICs, Wi-Fi, sound) never load. Wait
+# for udevd's control socket first.
+if ! grep -q 'run/udev/control' "$T/etc/init.d/S10udevd"; then
+	sed -i '0,/^\tudevadm trigger --type=subsystems/s//\tn=0; while [ ! -S \/run\/udev\/control ] \&\& [ $n -lt 100 ]; do sleep 0.1; n=$((n + 1)); done\n&/' \
+		"$T/etc/init.d/S10udevd"
+	grep -q 'run/udev/control' "$T/etc/init.d/S10udevd" || { echo "post-build: could not patch S10udevd"; exit 1; }
+fi
+
 # GTK / desktop caches that would otherwise be generated at every boot
 if [ -x "$HOST_DIR/bin/gtk-update-icon-cache" ]; then
 	for d in "$T"/usr/share/icons/*/; do
