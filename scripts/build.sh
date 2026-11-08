@@ -52,6 +52,9 @@ for A in $ARCHES; do
 	# packages every time, but never deletes: start from an empty one so that
 	# renamed or removed overlay files and moved repository files can't linger.
 	rm -rf "${O:?}/target"
+	# Buildroot copies a local-source package once and doesn't notice later
+	# changes: rebuild ours every time (seconds)
+	make O="$O" ml-settings-dirclean >/dev/null
 	set -o pipefail
 	if ! make -j"$(nproc)" O="$O" 2>&1 | tee "$O/build.log" | { grep --line-buffered -E '^>>>|Error|error:' || true; }; then
 		echo "BUILD FAILED ($A) - see $O/build.log"; tail -40 "$O/build.log"; exit 1

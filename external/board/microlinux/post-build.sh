@@ -66,6 +66,22 @@ rm -rf "$T/etc/skel/Downloads/"* "$T/etc/skel/Desktop/"*
 f="$T/usr/share/applications/pcmanfm-desktop-pref.desktop"
 [ -f "$f" ] && ! grep -q '^NoDisplay=true' "$f" && echo 'NoDisplay=true' >> "$f"
 
+# gdk-pixbuf's loaders.cache is generated from the build host's loaders, which
+# have no SVG loader: register librsvg's (entry as in librsvg 2.50 io-svg.c)
+L=usr/lib/gdk-pixbuf-2.0/2.10.0
+rm -f "$T/$L/loaders.cache.librsvg"
+if [ -f "$T/$L/loaders/libpixbufloader-svg.so" ] && ! grep -q 'pixbufloader-svg' "$T/$L/loaders.cache"; then
+	cat >> "$T/$L/loaders.cache" <<'EOC'
+"/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders/libpixbufloader-svg.so"
+"svg" 6 "gdk-pixbuf" "Scalable Vector Graphics" "LGPL"
+"image/svg+xml" "image/svg" "image/svg-xml" "image/vnd.adobe.svg+xml" "text/xml-svg" "image/svg+xml-compressed" ""
+"svg" "svgz" "svg.gz" ""
+" <svg" "*    " 100
+" <!DOCTYPE svg" "*             " 100
+
+EOC
+fi
+
 # GTK / desktop caches that would otherwise be generated at every boot
 if [ -x "$HOST_DIR/bin/gtk-update-icon-cache" ]; then
 	for d in "$T"/usr/share/icons/*/; do

@@ -26,3 +26,14 @@ PARTED_CONF_OPTS := $(filter-out --enable-device-mapper,$(PARTED_CONF_OPTS)) --d
 LIBINPUT_CONF_OPTS := $(filter-out -Dlua-plugins=enabled,$(LIBINPUT_CONF_OPTS)) -Dlua-plugins=disabled
 LIBDRM_CONF_OPTS := $(filter-out -Dvalgrind=enabled,$(LIBDRM_CONF_OPTS)) -Dvalgrind=disabled
 MESA3D_CONF_OPTS := $(filter-out -Dvalgrind=enabled,$(MESA3D_CONF_OPTS)) -Dvalgrind=disabled
+
+# SVG support for GTK (symbolic icons, theme assets, SVG pictures): build
+# librsvg's gdk-pixbuf loader; post-build.sh registers it in loaders.cache
+LIBRSVG_CONF_OPTS := $(filter-out --disable-pixbuf-loader,$(LIBRSVG_CONF_OPTS)) --enable-pixbuf-loader
+# (pkg-config hands configure the build-tree paths; install to the target's
+# loader directory, and let its own cache file go to a side name)
+ML_RSVG_LOADER_PATHS = gdk_pixbuf_moduledir=/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders \
+	gdk_pixbuf_cache_file=/usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache.librsvg
+LIBRSVG_MAKE_OPTS += $(ML_RSVG_LOADER_PATHS)
+LIBRSVG_INSTALL_STAGING_OPTS += $(ML_RSVG_LOADER_PATHS)
+LIBRSVG_INSTALL_TARGET_OPTS += $(ML_RSVG_LOADER_PATHS)
