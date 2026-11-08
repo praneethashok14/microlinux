@@ -1,0 +1,5 @@
+#!/bin/sh
+# Show (and follow with -f) the system log, wherever syslogd keeps it.
+if logread >/dev/null 2>&1; then exec logread "$@"; fi
+[ "$1" = -f ] && exec tail -n 200 -F /var/log/messages
+exec cat /var/log/messages

@@ -1,0 +1,7 @@
+#!/bin/sh
+# Called by getty on tty1 (getty -n -l). Root shell in recovery mode, else the desktop user.
+if grep -qw ml.recovery /proc/cmdline; then
+	echo "MicroLinux recovery shell. 'reboot' to restart, 'exit' to log in normally."
+	exec /bin/login -f root
+fi
+exec /bin/login -f user

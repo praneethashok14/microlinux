@@ -1,0 +1,9 @@
+#!/bin/sh
+# Mount installed mlpkg packages (and, on the live medium, autoload modules)
+case "$1" in
+	start)
+		printf "Activating packages: "
+		/usr/bin/mlpkg activate-all >/var/log/mlpkg-boot.log 2>&1 && echo "OK" || echo "FAIL (see /var/log/mlpkg-boot.log)"
+		;;
+	stop) ;;
+esac

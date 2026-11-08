@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Firefox
+GenericName=Web Browser
+Exec=firefox %u
+Icon=/opt/firefox/browser/chrome/icons/default/default48.png
+Categories=Network;WebBrowser;

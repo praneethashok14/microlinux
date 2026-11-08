@@ -1,0 +1,22 @@
+#!/bin/sh
+# Print a JWM menu (XML) of all applications with .desktop files.
+# Used by /etc/system.jwmrc via <Include>exec:ml-menu</Include>.
+xml() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'; }
+echo "<JWM>"
+for f in /usr/share/applications/*.desktop /usr/local/share/applications/*.desktop; do
+	[ -f "$f" ] || continue
+	awk -F= '
+		/^\[/ { main = ($0 == "[Desktop Entry]") }
+		main && $1 == "Name" && !name { name = substr($0, 6) }
+		main && $1 == "Exec" && !exec { exec = substr($0, 6) }
+		main && $1 == "Icon" && !icon { icon = substr($0, 6) }
+		main && $1 == "NoDisplay" && $2 == "true" { hide = 1 }
+		main && $1 == "Terminal" && $2 == "true" { term = 1 }
+		main && $1 == "Type" && $2 != "Application" { hide = 1 }
+		END { if (!hide && name && exec) printf "%s\t%s\t%s\t%s\n", name, icon, exec, term }' "$f"
+done | sort -f -u -t "$(printf '\t')" -k1,1 | while IFS="$(printf '\t')" read -r name icon cmd term; do
+	cmd=$(printf '%s' "$cmd" | sed 's/ *%[fFuUdDnNickvm]//g')
+	[ "$term" = 1 ] && cmd="xterm -T \"$name\" -e $cmd"
+	printf '  <Program icon="%s" label="%s">%s</Program>\n' "$(xml "$icon")" "$(xml "$name")" "$(xml "$cmd")"
+done
+echo "</JWM>"

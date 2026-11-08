@@ -1,0 +1,7 @@
+config BR2_PACKAGE_NCURSES5_COMPAT
+	bool "ncurses5-compat (ABI 5 libraries)"
+	help
+	  ncurses built with --with-abi-version=5, providing libtinfo.so.5,
+	  libncurses.so.5, libncursesw.so.5 and the form/menu/panel
+	  libraries for binaries built on RHEL/CentOS 7 (ncurses 5.9).
+	  Only shared libraries are installed.

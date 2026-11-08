@@ -1,0 +1,39 @@
+#!/bin/sh
+# el7-chroot - enter a complete RHEL/CentOS 7 userspace
+#
+#   sudo el7-chroot [COMMAND [ARGS...]]     default command: /bin/bash -l
+#
+# Runs inside a private mount namespace: /opt/el7 (read-only) is overlaid with
+# a tmpfs so it is writable, /dev /proc /sys /tmp /home /root and the network
+# configuration are bound in. Everything is torn down when the command exits.
+# Set EL7_PERSIST=/path/to/dir to keep changes made inside the chroot.
+R=${EL7_ROOT:-/opt/el7}
+[ "$(id -u)" = 0 ] || { echo "el7-chroot: must be run as root (sudo el7-chroot)" >&2; exit 1; }
+[ -d "$R/usr/lib64" ] || { echo "el7-chroot: EL7 runtime not found at $R (mlpkg install el7-runtime)" >&2; exit 1; }
+
+if [ -z "$EL7_CHROOT_INNER" ]; then
+	export EL7_CHROOT_INNER=1
+	exec unshare --mount --propagation private -- "$0" "$@"
+fi
+
+W=$(mktemp -d /run/el7-chroot.XXXXXX)
+if [ -n "$EL7_PERSIST" ]; then mkdir -p "$EL7_PERSIST"; mount --bind "$EL7_PERSIST" "$W"
+else mount -t tmpfs -o mode=0755 el7rw "$W"; fi
+mkdir -p "$W/upper" "$W/work" "$W/root"
+mount -t overlay overlay -o "lowerdir=$R,upperdir=$W/upper,workdir=$W/work" "$W/root"
+N=$W/root
+for d in dev proc sys tmp home root run etc/ssl; do mkdir -p "$N/$d"; done
+mount --rbind /dev "$N/dev"
+mount -t proc proc "$N/proc"
+mount --rbind /sys "$N/sys"
+mount --bind /tmp "$N/tmp"
+mount --bind /home "$N/home"
+mount --bind /root "$N/root"
+mount --bind /etc/ssl "$N/etc/ssl"
+cp -L /etc/resolv.conf "$N/etc/resolv.conf" 2>/dev/null || true
+cp /etc/hosts "$N/etc/hosts" 2>/dev/null || true
+grep -q "^$(id -un):" "$N/etc/passwd" || getent passwd 2>/dev/null >> "$N/etc/passwd" || cat /etc/passwd >> "$N/etc/passwd"
+
+[ $# -gt 0 ] || set -- /bin/bash -l
+exec chroot "$N" /usr/bin/env -i HOME=/root TERM="${TERM:-linux}" LC_ALL=C \
+	PATH=/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin PS1='[el7 \u@\h \W]\$ ' "$@"

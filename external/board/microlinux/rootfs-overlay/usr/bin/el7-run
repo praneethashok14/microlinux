@@ -1,0 +1,31 @@
+#!/bin/sh
+# el7-run - run a program with the exact RHEL/CentOS 7 runtime (glibc 2.17)
+#
+#   el7-run PROGRAM [ARGS...]
+#
+# The program is started through the EL7 dynamic loader from /opt/el7 with the
+# EL7 library directories first, so it gets the libraries it was built against
+# (libssl.so.10, libreadline.so.6, libmpfr.so.4, ...). Libraries not in the
+# EL7 runtime fall back to the system directories.
+# Programs that the EL7 program itself executes run normally (system loader).
+# For a complete EL7 userspace (shell, scripts, rpm layouts) use el7-chroot.
+R=${EL7_ROOT:-/opt/el7}
+[ $# -gt 0 ] || { sed -n '2,12s/^# \{0,1\}//p' "$0"; exit 2; }
+if [ ! -d "$R/usr/lib64" ]; then
+	echo "el7-run: EL7 runtime not found at $R (sudo mlpkg install el7-runtime)" >&2
+	exit 1
+fi
+LDSO=$(ls "$R"/usr/lib64/ld-2.*.so 2>/dev/null | head -n1)
+[ -x "$LDSO" ] || { echo "el7-run: EL7 dynamic loader not found in $R/usr/lib64" >&2; exit 1; }
+
+prog=$1; shift
+case "$prog" in
+	*/*) ;;
+	*) p=$(PATH="$PATH:$R/usr/bin:$R/usr/sbin" command -v "$prog") || { echo "el7-run: $prog: not found" >&2; exit 127; }
+	   prog=$p ;;
+esac
+
+# no locale archive in the runtime: C locale, and EL7's own iconv modules
+export LC_ALL=C
+export GCONV_PATH="$R/usr/lib64/gconv"
+exec "$LDSO" --library-path "$R/usr/lib64:$R/lib64${EL7_LIBRARY_PATH:+:$EL7_LIBRARY_PATH}" "$prog" "$@"

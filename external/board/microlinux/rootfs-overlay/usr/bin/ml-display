@@ -1,0 +1,28 @@
+#!/bin/sh
+# ml-display - display resolution helper (X11 / xrandr)
+#   ml-display list           outputs and modes
+#   ml-display set WxH        set resolution of the first connected output
+#   ml-display auto           apply ml.res=WxH from the kernel command line, or the preferred mode
+#   ml-display jwm-menu       JWM menu of available modes (used by the desktop menu)
+out() { xrandr --query | awk '/ connected/ {print $1; exit}'; }
+case "$1" in
+	list) xrandr --query ;;
+	set)  [ -n "$2" ] || { echo "usage: ml-display set WxH"; exit 1; }
+	      o=$(out); xrandr --output "$o" --mode "$2" 2>/dev/null || {
+	        # mode not advertised (common on virtual GPUs): add it with a CVT modeline
+	        w=${2%x*}; h=${2#*x}; name="${w}x${h}_ml"
+	        if command -v cvt >/dev/null; then ml=$(cvt "$w" "$h" | sed -n 's/^Modeline "[^"]*" //p')
+	        else echo "mode $2 not available on $o"; exit 1; fi
+	        xrandr --newmode "$name" $ml 2>/dev/null; xrandr --addmode "$o" "$name" && xrandr --output "$o" --mode "$name"; }
+	      mkdir -p "$HOME/.config"; echo "$2" > "$HOME/.config/ml-resolution" ;;
+	auto) r=$(sed -n 's/.*ml\.res=\([0-9]*x[0-9]*\).*/\1/p' /proc/cmdline)
+	      [ -z "$r" ] && [ -f "$HOME/.config/ml-resolution" ] && r=$(cat "$HOME/.config/ml-resolution")
+	      if [ -n "$r" ]; then "$0" set "$r"; else xrandr --output "$(out)" --auto 2>/dev/null; fi ;;
+	jwm-menu)
+	      echo "<JWM>"
+	      xrandr --query | awk '/ connected/ {c=1; next} /^[^ ]/ {c=0} c && $1 ~ /^[0-9]+x[0-9]+/ {print $1}' | awk '!s[$0]++' | head -n 15 | \
+	        while read -r m; do echo "  <Program label=\"$m\">ml-display set $m</Program>"; done
+	      echo "  <Separator/><Program label=\"Automatic\">sh -c 'rm -f ~/.config/ml-resolution; ml-display auto'</Program>"
+	      echo "</JWM>" ;;
+	*) sed -n '2,6s/^# \{0,1\}//p' "$0"; exit 1 ;;
+esac

@@ -1,0 +1,58 @@
+# MicroLinux kernel fragment for x86_64 (after linux-common.fragment).
+# Goal: any 64-bit PC or VM, booted from BIOS or UEFI (bzImage EFI stub).
+
+CONFIG_EFI_STUB=y
+CONFIG_EFI_HANDOVER_PROTOCOL=y
+
+# --- Display: UEFI GOP or BIOS VESA mode (set by GRUB) -> simpledrm, then the
+#     native KMS driver takes over: QEMU/Bochs, VMware, VirtualBox, Intel
+CONFIG_SYSFB_SIMPLEFB=y
+# CONFIG_FB_EFI is not set
+# CONFIG_FB_VESA is not set
+CONFIG_DRM_I915=m
+CONFIG_DRM_VMWGFX=m
+CONFIG_DRM_VBOXVIDEO=m
+CONFIG_DRM_CIRRUS_QEMU=m
+
+# --- Storage: legacy IDE/SATA (QEMU pc, older PCs), SD card readers
+CONFIG_ATA_PIIX=y
+CONFIG_ATA_GENERIC=y
+CONFIG_MMC_SDHCI=y
+CONFIG_MMC_SDHCI_PCI=m
+CONFIG_MMC_SDHCI_ACPI=m
+CONFIG_MMC_REALTEK_PCI=m
+CONFIG_MISC_RTSX_PCI=m
+
+# --- Virtualisation guests
+CONFIG_HYPERVISOR_GUEST=y
+CONFIG_PARAVIRT=y
+CONFIG_KVM_GUEST=y
+CONFIG_VMXNET3=m
+CONFIG_VMWARE_PVSCSI=m
+
+# --- Network: Intel / Realtek / Atheros wired, Intel / Atheros Wi-Fi
+#     (Realtek rtw88/rtw89 and MediaTek are in the common fragment)
+CONFIG_E1000=m
+CONFIG_IGC=m
+CONFIG_ALX=m
+CONFIG_ATL1C=m
+CONFIG_IWLWIFI=m
+CONFIG_IWLDVM=m
+CONFIG_IWLMVM=m
+CONFIG_IWLMLD=m
+CONFIG_ATH9K=m
+CONFIG_ATH10K=m
+CONFIG_ATH10K_PCI=m
+CONFIG_BT_INTEL=m
+
+# --- Laptop support: ACPI buttons/battery/backlight, touchpads
+CONFIG_ACPI_BUTTON=y
+CONFIG_ACPI_BATTERY=m
+CONFIG_ACPI_VIDEO=m
+CONFIG_INPUT_MOUSE=y
+CONFIG_MOUSE_PS2=y
+CONFIG_I2C_HID_ACPI=m
+CONFIG_HID_MULTITOUCH=m
+
+# --- RTC
+CONFIG_RTC_DRV_CMOS=y

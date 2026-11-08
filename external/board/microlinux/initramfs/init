@@ -1,0 +1,133 @@
+#!/bin/sh
+# MicroLinux initramfs /init
+#
+# Live mode (default):   find the medium (ml.live=LABEL=MICROLINUX), mount
+#                        /live/rootfs.sqfs read-only and put a writable overlay
+#                        (tmpfs, or ext4 with ml.persist=) on top.
+# Installed mode:        root=UUID=... / root=/dev/... mounts an ext4 root.
+#
+# Kernel parameters: ml.live= ml.toram ml.persist= ml.break ml.debug
+#                    ml.wait=<seconds> root= rootfstype= rootflags= ro rw
+export PATH=/bin:/sbin
+
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mkdir -p /run /newroot /live
+
+CMDLINE=$(cat /proc/cmdline)
+
+# getarg NAME -> prints value of NAME=value, or "1" for a bare flag; status 1 if absent
+getarg() {
+	for a in $CMDLINE; do
+		case "$a" in
+			"$1="*) echo "${a#*=}"; return 0 ;;
+			"$1") echo 1; return 0 ;;
+		esac
+	done
+	return 1
+}
+
+DEBUG=; getarg ml.debug >/dev/null && DEBUG=1
+QUIET=; getarg quiet >/dev/null && QUIET=1
+log() {
+	echo "initramfs: $*" > /dev/kmsg
+	[ -z "$QUIET" ] && echo "[initramfs] $*"
+}
+
+shell() {
+	echo
+	echo "=== MicroLinux emergency shell ($1) ==="
+	echo "Useful: blkid, ls /dev, cat /proc/cmdline, mount, dmesg | tail"
+	echo "Type 'exit' to continue booting."
+	setsid cttyhack sh
+}
+
+die() {
+	echo "[initramfs] ERROR: $*"
+	shell "error"
+}
+
+[ -n "$DEBUG" ] && set -x
+getarg ml.break >/dev/null && shell "ml.break requested"
+
+WAIT=$(getarg ml.wait || echo 30)
+
+# resolve SPEC (LABEL=, UUID=, /dev/...) to a block device, waiting for slow
+# devices such as USB sticks
+find_dev() {
+	spec="$1"; i=0
+	while [ "$i" -lt "$WAIT" ]; do
+		case "$spec" in
+			/dev/*) [ -b "$spec" ] && { echo "$spec"; return 0; } ;;
+			*) d=$(findfs "$spec" 2>/dev/null) && [ -n "$d" ] && { echo "$d"; return 0; } ;;
+		esac
+		[ "$i" = 3 ] && log "waiting for $spec ..."
+		sleep 1; i=$((i + 1))
+	done
+	return 1
+}
+
+mount_live() {
+	spec=$(getarg ml.live || echo LABEL=MICROLINUX)
+	mount -t tmpfs -o mode=0755 live /live
+	mkdir -p /live/medium /live/rootfs /live/cow
+
+	dev=$(find_dev "$spec") || die "live medium $spec not found"
+	log "live medium: $dev"
+	mount -o ro "$dev" /live/medium || die "cannot mount $dev"
+	[ -f /live/medium/live/rootfs.sqfs ] || die "$dev has no /live/rootfs.sqfs"
+
+	sqfs=/live/medium/live/rootfs.sqfs
+	if getarg ml.toram >/dev/null; then
+		log "copying system to RAM ..."
+		mkdir -p /live/ram
+		mount -t tmpfs -o mode=0755 ram /live/ram
+		cp /live/medium/live/rootfs.sqfs /live/ram/ || die "copy to RAM failed (not enough memory?)"
+		if [ -d /live/medium/packages ]; then
+			cp -r /live/medium/packages /live/ram/ || die "copy to RAM failed (not enough memory?)"
+		fi
+		sqfs=/live/ram/rootfs.sqfs
+		umount /live/medium && rmdir /live/medium && ln -s ram /live/medium
+	fi
+	mount -t squashfs -o loop,ro "$sqfs" /live/rootfs || die "cannot mount $sqfs"
+
+	if p=$(getarg ml.persist); then
+		if pdev=$(WAIT=10 find_dev "$p") && mount -t ext4 "$pdev" /live/cow; then
+			log "persistence on $pdev"
+		else
+			log "persistence device $p not usable, changes will be lost on reboot"
+			mount -t tmpfs -o mode=0755 cow /live/cow
+		fi
+	else
+		mount -t tmpfs -o mode=0755 cow /live/cow
+	fi
+	mkdir -p /live/cow/upper /live/cow/work
+	mount -t overlay overlay \
+		-o lowerdir=/live/rootfs,upperdir=/live/cow/upper,workdir=/live/cow/work \
+		/newroot || die "overlay mount failed"
+	mkdir -p /newroot/live
+	mount --move /live /newroot/live || die "cannot move /live"
+}
+
+mount_disk() {
+	spec="$1"
+	dev=$(find_dev "$spec") || die "root device $spec not found"
+	fstype=$(getarg rootfstype || echo ext4)
+	opts=$(getarg rootflags || echo defaults)
+	getarg ro >/dev/null && opts="$opts,ro"
+	log "root: $dev ($fstype)"
+	mount -t "$fstype" -o "$opts" "$dev" /newroot || die "cannot mount root $dev"
+}
+
+if root=$(getarg root); then
+	mount_disk "$root"
+else
+	mount_live
+fi
+
+[ -x /newroot/sbin/init ] || [ -L /newroot/sbin/init ] || die "/sbin/init missing on root filesystem"
+
+mount --move /dev /newroot/dev
+umount /sys /proc
+exec switch_root /newroot /sbin/init

@@ -1,0 +1,165 @@
+#!/bin/bash
+# elfcheck - inspect ELF executables/libraries and predict whether they run here
+#
+#   elfcheck [-v] FILE...      FILE may also be a command name found in $PATH
+#
+# Reports: class/machine/type, ELF interpreter, every NEEDED library and where
+# the dynamic loader would find it (RPATH/RUNPATH/$ORIGIN, LD_LIBRARY_PATH,
+# system dirs), missing libraries, and every versioned symbol requirement
+# (GLIBC_2.x, GLIBCXX_3.4.x, OPENSSL_1.0.x, ...) checked against the version
+# definitions of the library that would actually be loaded.
+#
+# Verdict per file:
+#   NATIVE   runs with the system glibc and libraries
+#   EL7-RUN  needs the EL7 runtime: run it with `el7-run FILE`
+#   FAIL     cannot run here (wrong architecture or unresolvable libraries)
+# Exit status: 0 if every file is NATIVE, 1 otherwise.
+
+VERBOSE=0
+[ "$1" = -v ] && { VERBOSE=1; shift; }
+[ $# -gt 0 ] || { sed -n '2,20s/^# \{0,1\}//p' "$0"; exit 2; }
+
+EL7=${EL7_ROOT:-/opt/el7}
+SYSDIRS="/usr/lib64 /usr/lib /lib64 /lib"
+EL7DIRS="$EL7/usr/lib64 $EL7/lib64"
+command -v readelf >/dev/null || { echo "elfcheck: readelf (binutils) not found" >&2; exit 2; }
+
+# readelf's name for this system's machine type
+case "$(uname -m)" in
+	aarch64) NATIVE_MACHINE="AArch64" ;;
+	x86_64)  NATIVE_MACHINE="Advanced Micro Devices X86-64" ;;
+	*)       NATIVE_MACHINE=$(readelf -hW /usr/bin/busybox | sed -n 's/ *Machine: *//p') ;;
+esac
+
+if [ -t 1 ]; then G=$'\e[32m' R=$'\e[31m' Y=$'\e[33m' B=$'\e[1m' N=$'\e[0m'; else G= R= Y= B= N=; fi
+
+dyn()       { readelf -dW "$1" 2>/dev/null; }
+needed()    { dyn "$1" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'; }
+rpaths()    { dyn "$1" | sed -n "s/.*($2).*\[\(.*\)\]/\1/p" | tr ':' ' '; }
+# versions a library defines (one per line)
+defined_versions() { readelf -VW "$1" 2>/dev/null | awk '/Version definition section/{d=1;next} /Version needs section/{d=0} d && /Name:/ && !/Flags: BASE/ {for(i=1;i<=NF;i++) if($i=="Name:") print $(i+1)}'; }
+# "lib version" pairs a file requires
+required_versions() { readelf -VW "$1" 2>/dev/null | awk '/Version needs section/{r=1;next} /Version definition section/{r=0} r && /File:/ {for(i=1;i<=NF;i++) if($i=="File:") f=$(i+1)} r && /Name:/ {for(i=1;i<=NF;i++) if($i=="Name:") print f, $(i+1)}'; }
+
+# resolve LIB for FILE in the given search dirs, print path
+resolve() { # lib file dirs...
+	local lib=$1 file=$2 origin d; shift 2
+	origin=$(dirname "$(readlink -f "$file")")
+	for d in "$@"; do
+		d=${d//\$ORIGIN/$origin}; d=${d//\$\{ORIGIN\}/$origin}
+		[ -e "$d/$lib" ] && { readlink -f "$d/$lib"; return 0; }
+	done
+	return 1
+}
+
+check_file() {
+	local f=$1 hdr class machine type interp runpath rpath dirs el7dirs lib p status=NATIVE
+	[ -e "$f" ] || { p=$(command -v "$f" 2>/dev/null) && f=$p; }
+	[ -f "$f" ] || { echo "${R}$1: no such file${N}"; return 1; }
+	f=$(readlink -f "$f")
+	if [ "$(head -c4 "$f" | od -An -c | tr -d ' ')" != "177ELF" ]; then
+		if head -c2 "$f" | grep -q '#!'; then echo "$f: script ($(head -n1 "$f" | cut -c3-)) - check its interpreter instead"; else echo "$f: not an ELF file"; fi
+		return 1
+	fi
+	hdr=$(readelf -hW "$f")
+	class=$(echo "$hdr" | sed -n 's/ *Class: *//p')
+	machine=$(echo "$hdr" | sed -n 's/ *Machine: *//p')
+	type=$(echo "$hdr" | sed -n 's/ *Type: *\([A-Z]*\).*/\1/p')
+	interp=$(readelf -lW "$f" 2>/dev/null | sed -n 's/.*\[Requesting program interpreter: \(.*\)\]/\1/p')
+
+	echo "${B}$f${N}"
+	echo "  format:      $class $machine ($type)"
+	if [ "$machine" != "$NATIVE_MACHINE" ]; then
+		echo "  ${R}verdict:     FAIL - built for $machine, this system is $NATIVE_MACHINE${N}"
+		echo "               (use the MicroLinux build for that architecture)"
+		return 1
+	fi
+	if [ -n "$interp" ]; then
+		if [ -e "$interp" ]; then echo "  interpreter: $interp (present)"
+		else echo "  interpreter: ${R}$interp (MISSING)${N}"; status=FAIL; fi
+	elif [ "$type" = EXEC ] && [ -z "$(needed "$f")" ]; then
+		echo "  linkage:     static"
+		echo "  ${G}verdict:     NATIVE${N} (statically linked)"
+		return 0
+	fi
+
+	runpath=$(rpaths "$f" RUNPATH); rpath=$(rpaths "$f" RPATH)
+	[ -n "$runpath" ] && echo "  runpath:     $runpath"
+	[ -n "$rpath" ] && echo "  rpath:       $rpath"
+	# glibc order: RPATH (if no RUNPATH), LD_LIBRARY_PATH, RUNPATH, system dirs
+	dirs=""; [ -z "$runpath" ] && dirs="$rpath"
+	dirs="$dirs ${LD_LIBRARY_PATH//:/ } $runpath $SYSDIRS"
+	el7dirs="$rpath $runpath $EL7DIRS $SYSDIRS"
+
+	# walk the full dependency tree
+	declare -A seen=() where=()
+	local queue=("$f") cur missing=() el7only=()
+	while [ ${#queue[@]} -gt 0 ]; do
+		cur=${queue[0]}; queue=("${queue[@]:1}")
+		for lib in $(needed "$cur"); do
+			[ -n "${seen[$lib]}" ] && continue
+			seen[$lib]=1
+			if p=$(resolve "$lib" "$cur" $dirs); then
+				where[$lib]=$p; queue+=("$p")
+			elif p=$(resolve "$lib" "$cur" $el7dirs); then
+				where[$lib]="el7:$p"; el7only+=("$lib"); queue+=("$p")
+			else
+				where[$lib]=MISSING; missing+=("$lib")
+			fi
+		done
+	done
+
+	echo "  libraries:"
+	for lib in $(needed "$f"); do
+		case "${where[$lib]}" in
+			MISSING) echo "    ${R}$lib => not found${N}" ;;
+			el7:*)   echo "    ${Y}$lib => ${where[$lib]#el7:} (EL7 runtime only)${N}" ;;
+			*)       echo "    $lib => ${where[$lib]}" ;;
+		esac
+	done
+	if [ $VERBOSE = 1 ]; then
+		echo "  indirect:"
+		for lib in "${!seen[@]}"; do
+			needed "$f" | grep -qxF "$lib" && continue
+			echo "    $lib => ${where[$lib]#el7:}"
+		done | sort
+	fi
+
+	# symbol versions required by the file itself, checked against the provider
+	local bad=() maxglibc=""
+	while read -r lib ver; do
+		[ -n "$lib" ] || continue
+		case "$ver" in GLIBC_2.*) maxglibc=$(printf '%s\n%s\n' "$maxglibc" "$ver" | sort -V | tail -n1) ;; esac
+		p=${where[$lib]#el7:}
+		[ "$p" = MISSING ] && continue
+		[ -z "$p" ] && p=$(resolve "$lib" "$f" $dirs)
+		[ -n "$p" ] || continue
+		defined_versions "$p" | grep -qxF "$ver" || bad+=("$ver (from $lib)")
+	done < <(required_versions "$f")
+	[ -n "$maxglibc" ] && echo "  needs glibc: ${maxglibc#GLIBC_} or newer (system: $(/usr/lib/libc.so.6 2>/dev/null | sed -n '1s/.*version \([0-9.]*\).*/\1/p'))"
+	if [ ${#bad[@]} -gt 0 ]; then
+		echo "  ${R}unsatisfied symbol versions:${N}"
+		printf '    %s\n' "${bad[@]}"
+	fi
+
+	if [ ${#missing[@]} -gt 0 ]; then
+		echo "  ${R}verdict:     FAIL - missing: ${missing[*]}${N}"
+		[ -d "$EL7/usr/lib64" ] || echo "               (EL7 runtime not installed: sudo mlpkg install el7-runtime)"
+		return 1
+	elif [ ${#bad[@]} -gt 0 ]; then
+		if [ -d "$EL7/usr/lib64" ]; then echo "  ${Y}verdict:     EL7-RUN - run with: el7-run $f${N}"
+		else echo "  ${R}verdict:     FAIL - symbol versions not provided by system libraries${N}"; fi
+		return 1
+	elif [ ${#el7only[@]} -gt 0 ]; then
+		echo "  ${Y}verdict:     EL7-RUN - needs ${el7only[*]}; run with: el7-run $f${N}"
+		return 1
+	elif [ $status = FAIL ]; then
+		echo "  ${R}verdict:     FAIL${N}"; return 1
+	fi
+	echo "  ${G}verdict:     NATIVE${N}"
+	return 0
+}
+
+rc=0
+for a in "$@"; do check_file "$a" || rc=1; echo; done
+exit $rc

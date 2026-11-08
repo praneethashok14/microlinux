@@ -1,0 +1,2 @@
+# username uid group gid password home shell groups comment
+user -1 user -1 =live /home/user /bin/bash wheel,video,input,audio,netdev,users MicroLinux User

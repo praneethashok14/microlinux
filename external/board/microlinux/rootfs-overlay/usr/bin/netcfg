@@ -1,0 +1,93 @@
+#!/bin/sh
+# netcfg - simple network configuration for MicroLinux
+usage() {
+	cat <<'U'
+usage: netcfg <command>
+  status                          interfaces, addresses, routes, DNS
+  dhcp <iface>                    (re)start DHCP on an interface
+  static <iface> <addr/prefix> <gateway> [dns...]
+  dns <server>...                 set DNS servers
+  wifi-scan [iface]               list Wi-Fi networks
+  wifi <ssid> [passphrase] [iface]  save a Wi-Fi network and connect
+  wifi-up [iface]                 start Wi-Fi with the saved networks
+  wifi-forget <ssid>              remove a saved network
+  test                            check gateway, DNS and HTTPS connectivity
+U
+}
+WPA_CONF=/etc/wpa_supplicant/wpa_supplicant.conf
+need_root() { [ "$(id -u)" = 0 ] || { echo "netcfg: run as root (sudo netcfg ...)"; exit 1; }; }
+wifi_iface() {
+	[ -n "$1" ] && { echo "$1"; return; }
+	for p in /sys/class/net/*; do [ -d "$p/wireless" ] || [ -d "$p/phy80211" ] && { echo "${p##*/}"; return; }; done
+	echo "netcfg: no Wi-Fi interface found (driver or firmware missing? see: dmesg | grep -i firmware)" >&2; exit 1
+}
+start_dhcp() {
+	kill "$(cat /run/udhcpc.$1.pid 2>/dev/null)" 2>/dev/null
+	ip link set "$1" up
+	udhcpc -b -S -R -t 10 -T 2 -i "$1" -p "/run/udhcpc.$1.pid" -x hostname:"$(hostname)"
+}
+
+case "$1" in
+	status|"")
+		echo "== interfaces"; ip -br addr
+		echo "== routes";     ip route
+		echo "== DNS";        grep -v '^#' /etc/resolv.conf 2>/dev/null || echo "(none)"
+		w=$(wifi_iface 2>/dev/null) && { echo "== Wi-Fi ($w)"; iw dev "$w" link 2>/dev/null; }
+		;;
+	dhcp)   need_root; [ -n "$2" ] || { usage; exit 1; }; start_dhcp "$2" ;;
+	static)
+		need_root; [ -n "$4" ] || { usage; exit 1; }
+		kill "$(cat /run/udhcpc.$2.pid 2>/dev/null)" 2>/dev/null
+		ip link set "$2" up
+		ip addr flush dev "$2"
+		ip addr add "$3" dev "$2"
+		ip route replace default via "$4" dev "$2"
+		shift 4
+		[ $# -gt 0 ] && { : > /etc/resolv.conf; for s in "$@"; do echo "nameserver $s" >> /etc/resolv.conf; done; }
+		ip -br addr show "$2"
+		;;
+	dns)    need_root; shift; [ $# -gt 0 ] || { usage; exit 1; }
+		: > /etc/resolv.conf; for s in "$@"; do echo "nameserver $s" >> /etc/resolv.conf; done; cat /etc/resolv.conf ;;
+	wifi-scan)
+		need_root; i=$(wifi_iface "$2") || exit 1
+		rfkill unblock wifi 2>/dev/null; ip link set "$i" up
+		iw dev "$i" scan 2>/dev/null | awk '/^BSS/{bss=$2} /signal:/{sig=$2} /SSID:/{sub(/^[ \t]*SSID: /,""); if ($0!="") printf "%7s dBm  %s\n", sig, $0}' | sort -rn | uniq
+		;;
+	wifi)
+		need_root; [ -n "$2" ] || { usage; exit 1; }
+		i=$(wifi_iface "$4") || exit 1
+		if [ -n "$3" ]; then
+			wpa_passphrase "$2" "$3" | grep -v '#psk=' >> "$WPA_CONF"
+		else
+			printf 'network={\n\tssid="%s"\n\tkey_mgmt=NONE\n}\n' "$2" >> "$WPA_CONF"
+		fi
+		chmod 600 "$WPA_CONF"
+		"$0" wifi-up "$i"
+		;;
+	wifi-up)
+		need_root; i=$(wifi_iface "$2") || exit 1
+		rfkill unblock wifi 2>/dev/null
+		killall wpa_supplicant 2>/dev/null; sleep 1
+		ip link set "$i" up
+		wpa_supplicant -B -i "$i" -c "$WPA_CONF" -P /run/wpa_supplicant.pid || exit 1
+		n=0; while [ $n -lt 15 ]; do
+			wpa_cli -i "$i" status 2>/dev/null | grep -q wpa_state=COMPLETED && break
+			sleep 1; n=$((n + 1))
+		done
+		wpa_cli -i "$i" status | grep -E '^(ssid|wpa_state)='
+		start_dhcp "$i"
+		;;
+	wifi-forget)
+		need_root; [ -n "$2" ] || { usage; exit 1; }
+		awk -v s="\"$2\"" 'BEGIN{RS="";ORS="\n\n"} !($0 ~ "ssid=" s) || !/network=/' "$WPA_CONF" > "$WPA_CONF.new" && mv "$WPA_CONF.new" "$WPA_CONF"
+		echo "forgot $2"
+		;;
+	test)
+		gw=$(ip route | awk '/^default/ {print $3; exit}')
+		if [ -n "$gw" ] && ping -c1 -W2 "$gw" >/dev/null 2>&1; then echo "gateway  ok ($gw)"; else echo "gateway  FAIL (${gw:-no default route})"; fi
+		if nslookup www.mozilla.org >/dev/null 2>&1; then echo "dns      ok"; else echo "dns      FAIL"; fi
+		if curl -fsS -o /dev/null --max-time 10 https://www.mozilla.org/; then echo "https    ok (certificate verified)"; else echo "https    FAIL"; fi
+		;;
+	-h|--help|help) usage ;;
+	*) usage; exit 1 ;;
+esac

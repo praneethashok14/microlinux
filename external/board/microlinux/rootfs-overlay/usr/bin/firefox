@@ -1,0 +1,13 @@
+#!/bin/sh
+# Firefox lives in the optional mlpkg package "firefox" (mounted at /opt/firefox).
+if [ -x /opt/firefox/firefox ]; then
+	mkdir -p "$HOME/Downloads"
+	# no GPU drivers in the base image: use Firefox's software WebRender
+	export MOZ_WEBRENDER_SOFTWARE=1
+	exec /opt/firefox/firefox "$@"
+fi
+msg="Firefox is not installed. Install it with:  sudo mlpkg install firefox"
+if [ -n "$DISPLAY" ] && [ ! -t 0 ]; then
+	exec xterm -T Firefox -e sh -c "echo '$msg'; echo; printf 'Install now? [y/N] '; read a; [ \"\$a\" = y ] && sudo mlpkg install firefox && exec /usr/bin/firefox; sleep 2"
+fi
+echo "$msg" >&2; exit 1

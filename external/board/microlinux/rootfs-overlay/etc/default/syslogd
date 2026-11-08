@@ -1,0 +1,3 @@
+# Live system: keep the log in a 1 MiB RAM ring buffer (read with logread).
+# ml-install switches installed systems to /var/log/messages with rotation.
+SYSLOGD_ARGS="-C1024"

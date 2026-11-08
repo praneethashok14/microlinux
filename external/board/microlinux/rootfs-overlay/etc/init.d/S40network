@@ -1,0 +1,25 @@
+#!/bin/sh
+# Bring up loopback, then DHCP on every wired interface (in the background so
+# boot is not delayed). Wi-Fi is started if /etc/wpa_supplicant/wpa_supplicant.conf
+# contains a network (use `netcfg wifi SSID`).
+case "$1" in
+	start)
+		ip link set lo up
+		for p in /sys/class/net/*; do
+			n=${p##*/}
+			case "$n" in lo) continue ;; esac
+			if [ -d "$p/wireless" ] || [ -d "$p/phy80211" ]; then
+				grep -q '^network=' /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null && \
+					/usr/bin/netcfg wifi-up "$n" >/dev/null 2>&1 &
+				continue
+			fi
+			ip link set "$n" up
+			udhcpc -b -S -R -t 10 -T 2 -i "$n" -p "/run/udhcpc.$n.pid" -x hostname:"$(hostname)" >/dev/null 2>&1
+		done
+		echo "Network: DHCP started on wired interfaces"
+		;;
+	stop)
+		for f in /run/udhcpc.*.pid; do [ -f "$f" ] && kill "$(cat "$f")" 2>/dev/null; done
+		killall wpa_supplicant 2>/dev/null
+		;;
+esac

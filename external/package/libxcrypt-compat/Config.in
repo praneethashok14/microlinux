@@ -1,0 +1,9 @@
+config BR2_PACKAGE_LIBXCRYPT_COMPAT
+	bool "libxcrypt-compat (libcrypt.so.1)"
+	depends on BR2_TOOLCHAIN_USES_GLIBC
+	help
+	  libxcrypt built with the glibc-compatible obsolete API, providing
+	  libcrypt.so.1 with the GLIBC_2.x symbol versions that binaries
+	  built against older glibc (e.g. RHEL/CentOS 7) link to. Only the
+	  shared library is installed; Buildroot's libxcrypt provides the
+	  development files and libcrypt.so.2.

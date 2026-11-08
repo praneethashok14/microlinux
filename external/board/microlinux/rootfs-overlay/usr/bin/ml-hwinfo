@@ -1,0 +1,20 @@
+#!/bin/sh
+# ml-hwinfo - hardware detection report (run as root for full DMI/firmware data)
+h() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
+h "CPU";             lscpu
+h "Memory";          free -h
+h "Machine";         cat /sys/firmware/devicetree/base/model 2>/dev/null | tr -d '\0' && echo
+                     [ "$(id -u)" = 0 ] && dmidecode -t system 2>/dev/null | grep -E 'Manufacturer|Product|Version' | sed 's/^\t//'
+h "PCI devices";     lspci -nnk 2>/dev/null || echo "(no PCI bus)"
+h "USB devices";     lsusb 2>/dev/null || echo "(no USB)"
+h "Block devices";   lsblk -o NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINTS
+h "Network";         ip -br link
+                     for p in /sys/class/net/*; do n=${p##*/}; [ "$n" = lo ] && continue; d=$(readlink "$p/device/driver" 2>/dev/null); echo "  $n: driver ${d##*/}"; done
+h "Wi-Fi";           iw dev 2>/dev/null | grep -E 'Interface|type' || echo "(none)"
+h "Bluetooth";       ls /sys/class/bluetooth 2>/dev/null | grep . || echo "(none)"
+h "Graphics";        for c in /sys/class/drm/card[0-9]; do [ -e "$c" ] && echo "  ${c##*/}: $(basename "$(readlink "$c/device/driver")")"; done
+                     cat /sys/class/drm/card*-*/modes 2>/dev/null | head -n 3 | sed 's/^/  mode /'
+h "Input devices";   grep -E '^N:' /proc/bus/input/devices | sed 's/^N: Name=/  /'
+h "Sound";           cat /proc/asound/cards 2>/dev/null || echo "(none)"
+h "Kernel modules";  lsmod | tail -n +2 | awk '{print $1}' | tr '\n' ' '; echo
+h "Firmware loading"; dmesg 2>/dev/null | grep -i 'firmware' | tail -n 10 || echo "(run as root to read the kernel log)"

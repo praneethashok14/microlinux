@@ -1,0 +1,2 @@
+# Live session convenience; removed by ml-install on installed systems.
+user ALL=(ALL:ALL) NOPASSWD: ALL

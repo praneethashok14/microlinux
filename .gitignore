@@ -1,0 +1,7 @@
+*.qcow2
+.DS_Store
+__pycache__/
+build-disk.img
+out/
+tests/.run/
+tests/results/

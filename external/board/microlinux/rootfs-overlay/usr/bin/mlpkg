@@ -1,0 +1,435 @@
+#!/bin/sh
+# mlpkg - the MicroLinux package manager
+#
+# A package (.mlp) is a read-only SquashFS image with metadata in
+# /.mlpkg/info (name, version, type, depends, ...). Every download is checked
+# against the SHA-256 in the repository INDEX. Two kinds:
+#
+#   mount  (default; firefox, el7-runtime) a self-contained tree. The image is
+#          kept in /var/lib/mlpkg/installed/ and mounted at its mountpoint
+#          (e.g. /opt/firefox); commands and menu entries are linked.
+#   files  (type=files; the package repository) ordinary software built for
+#          /usr. Its files are copied into the system, recorded in
+#          /var/lib/mlpkg/installed/NAME.files and removed again on uninstall.
+#          A file of the base system or of another package is never
+#          overwritten (busybox applet links are replaced, and put back on removal).
+#          Dependencies (depends=) are installed first and marked automatic.
+#
+# Repositories (/etc/mlpkg/repos.conf) are file://, http:// or https:// URLs of
+# directories with an INDEX:  name|version|file|sha256|size|description|depends|section
+set -e
+
+LIB=/var/lib/mlpkg/installed
+CACHE=/var/cache/mlpkg
+RUN=/run/mlpkg/active
+REPOS=/etc/mlpkg/repos.conf
+LIVE_PKGS=/live/medium/packages
+
+die() { echo "mlpkg: $*" >&2; exit 1; }
+need_root() { [ "$(id -u)" = 0 ] || die "this command must be run as root (try: sudo mlpkg $CMD ...)"; }
+
+usage() {
+	cat <<EOF
+usage: mlpkg <command> [args]
+
+  update                 refresh package lists from all repositories
+  list [-a|-i]           list applications (-a: also libraries, -i: installed only)
+  search <term>          search names and descriptions
+  info <name>            show package details
+  install <name|file>... download, verify and install packages and their dependencies
+  remove <name>...       uninstall packages
+  autoremove             remove dependencies that nothing needs any more
+  files <name>           list files of an installed package
+  verify [name]          check installed packages (image SHA-256 / files present)
+  repo list|add <url>|remove <url>   manage repositories
+  activate <name>        mount an installed package
+  deactivate <name>      unmount a package
+  activate-all           mount all installed packages (+ live-medium autoload)
+EOF
+}
+
+# --- repositories -------------------------------------------------------------
+repo_list() { grep -v '^[[:space:]]*\(#\|$\)' "$REPOS" 2>/dev/null || true; }
+
+fetch() { # url dest
+	case "$1" in
+		file://*) cp "${1#file://}" "$2" ;;
+		http://*|https://*) curl -fsSL --retry 2 --connect-timeout 15 -o "$2" "$1" ;;
+		*) die "unsupported URL: $1" ;;
+	esac
+}
+
+cmd_update() {
+	mkdir -p "$CACHE"
+	rm -f "$CACHE"/INDEX.* "$CACHE"/REPO.*
+	n=0
+	for r in $(repo_list); do
+		n=$((n + 1))
+		if fetch "$r/INDEX" "$CACHE/INDEX.$n.tmp" 2>/dev/null; then
+			mv "$CACHE/INDEX.$n.tmp" "$CACHE/INDEX.$n"
+			echo "$r" > "$CACHE/REPO.$n"
+			echo "  ok   $r ($(grep -c . "$CACHE/INDEX.$n") packages)"
+		else
+			rm -f "$CACHE/INDEX.$n.tmp"
+			echo "  skip $r (unreachable)"
+		fi
+	done
+}
+
+ensure_index() {
+	ls "$CACHE"/INDEX.* >/dev/null 2>&1 && return 0
+	if [ "$(id -u)" = 0 ]; then cmd_update >/dev/null; return 0; fi
+	# read-only fallback for unprivileged users: read repositories directly
+	TMPIDX=$(mktemp -d); CACHE=$TMPIDX; n=0
+	for r in $(repo_list); do
+		n=$((n + 1))
+		fetch "$r/INDEX" "$CACHE/INDEX.$n" 2>/dev/null && echo "$r" > "$CACHE/REPO.$n" || true
+	done
+}
+
+# lookup NAME -> sets P_VER P_FILE P_SHA P_SIZE P_DESC P_DEPS P_SEC P_REPO, status 1 if not found
+lookup() {
+	ensure_index
+	for idx in "$CACHE"/INDEX.*; do
+		[ -f "$idx" ] || continue
+		line=$(awk -F'|' -v n="$1" '$1 == n { print; exit }' "$idx")
+		[ -n "$line" ] || continue
+		IFS='|' read -r _ P_VER P_FILE P_SHA P_SIZE P_DESC P_DEPS P_SEC <<EOF
+$line
+EOF
+		P_REPO=$(cat "${idx%/*}/REPO.${idx##*.}")
+		return 0
+	done
+	return 1
+}
+
+# --- package metadata -----------------------------------------------------------
+info_get() { sed -n "s/^$2=//p" "$1" | head -n 1; }   # infofile key
+
+is_active() { [ -e "$RUN/$1" ]; }
+is_files_pkg() { [ -f "$LIB/$1.files" ]; }
+
+# --- files packages ----------------------------------------------------------------
+# paths (one per line, absolute) of the non-directory entries of a mounted image
+tree_files() { ( cd "$1" && find . ! -type d ! -path './.mlpkg' ! -path './.mlpkg/*' | sed 's|^\.||' ); }
+
+# install_files NAME MOUNTED-IMAGE: copy the tree into /, refusing to overwrite
+# files that aren't ours; record files, replaced busybox links and new directories
+install_files() {
+	name=$1; src=$2
+	owned=$(mktemp); cat "$LIB"/*.files 2>/dev/null | sort -u > "$owned"
+	conflicts=$(tree_files "$src" | while read -r f; do
+		[ -e "$f" ] || [ -L "$f" ] || continue
+		[ "$(readlink "$f")" = /bin/busybox ] && continue
+		if grep -qxF "$f" "$owned"; then
+			grep -qxF "$f" "$LIB/$name.files" 2>/dev/null && continue   # our own (reinstall)
+			echo "$f (package $(grep -lxF "$f" "$LIB"/*.files | head -n1 | sed 's|.*/||; s|\.files$||'))"
+		else
+			echo "$f (base system)"
+		fi
+	done)
+	rm -f "${owned:?}"
+	[ -z "$conflicts" ] || die "$name: would overwrite existing files:
+$(echo "$conflicts" | head -n 20)"
+	tree_files "$src" | while read -r f; do [ "$(readlink "$f" 2>/dev/null)" = /bin/busybox ] && echo "$f"; done > "$LIB/$name.busybox"
+	( cd "$src" && find . -mindepth 1 -type d ! -path './.mlpkg' ! -path './.mlpkg/*' | sed 's|^\.||' ) |
+		while read -r d; do [ -e "$d" ] || echo "$d"; done > "$LIB/$name.dirs"
+	tree_files "$src" > "$LIB/$name.files"
+	( cd "$src" && for e in * .[!.]*; do
+		[ -e "$e" ] || [ -L "$e" ] || continue
+		[ "$e" = .mlpkg ] && continue
+		cp -a "$e" / || exit 1
+	done ) || die "$name: copying files failed"
+	triggers "$LIB/$name.files"
+}
+
+remove_files() {
+	name=$1
+	while read -r f; do [ -n "$f" ] && rm -f -- "${f:?}"; done < "$LIB/$name.files"
+	[ -f "$LIB/$name.busybox" ] && while read -r f; do [ -e "$f" ] || ln -s /bin/busybox "$f"; done < "$LIB/$name.busybox"
+	[ -f "$LIB/$name.dirs" ] && sort -r "$LIB/$name.dirs" | while read -r d; do rmdir "$d" 2>/dev/null || true; done
+	triggers "$LIB/$name.files"
+	rm -f "${LIB:?}/${name:?}.files" "${LIB:?}/${name:?}.busybox" "${LIB:?}/${name:?}.dirs"
+}
+
+# refresh system caches the package's files belong to
+triggers() {
+	for t in $(sed -n 's|^/usr/share/icons/\([^/]*\)/.*|\1|p' "$1" | sort -u); do
+		[ -f "/usr/share/icons/$t/index.theme" ] && gtk-update-icon-cache -q -f -t "/usr/share/icons/$t" 2>/dev/null || true
+	done
+	if grep -q '^/usr/share/mime/packages/' "$1" && command -v update-mime-database >/dev/null; then
+		update-mime-database /usr/share/mime 2>/dev/null || true
+	fi
+}
+
+# installed packages whose depends= names $1
+rdepends() {
+	for inf in "$LIB"/*.info; do
+		[ -f "$inf" ] || continue
+		n=${inf##*/}; n=${n%.info}
+		[ "$n" = "$1" ] && continue
+		case " $(info_get "$inf" depends) " in *" $1 "*) echo "$n" ;; esac
+	done
+}
+
+# --- activation -------------------------------------------------------------------
+activate() { # name image
+	name=$1; img=$2
+	is_active "$name" && return 0
+	tmp=$(mktemp -d)
+	mount -t squashfs -o loop,ro "$img" "$tmp" || { rmdir "$tmp"; die "$img: not a valid package image"; }
+	[ -f "$tmp/.mlpkg/info" ] || { umount "$tmp"; rmdir "$tmp"; die "$img: missing .mlpkg/info"; }
+	mp=$(info_get "$tmp/.mlpkg/info" mountpoint)
+	case "$mp" in /opt/*) ;; *) umount "$tmp"; rmdir "$tmp"; die "$name: refusing mountpoint '$mp' (must be under /opt)";; esac
+	umount "$tmp"; rmdir "$tmp"
+	mkdir -p "$mp" "$RUN"
+	mount -t squashfs -o loop,ro,nodev "$img" "$mp"
+	inf="$mp/.mlpkg/info"
+	mkdir -p /usr/local/bin /usr/local/share/applications
+	for b in $(info_get "$inf" bin); do
+		ln -sf "$mp/$b" "/usr/local/bin/${b##*/}"
+	done
+	for d in $(info_get "$inf" desktop); do
+		ln -sf "$mp/.mlpkg/$d" "/usr/local/share/applications/$d"
+	done
+	printf '%s\n%s\n' "$img" "$mp" > "$RUN/$name"
+}
+
+deactivate() {
+	name=$1
+	is_active "$name" || return 0
+	mp=$(sed -n 2p "$RUN/$name")
+	inf="$mp/.mlpkg/info"
+	for b in $(info_get "$inf" bin); do rm -f "/usr/local/bin/${b##*/}"; done
+	for d in $(info_get "$inf" desktop); do rm -f "/usr/local/share/applications/$d"; done
+	umount "$mp" || die "$name is in use (close its programs first)"
+	rm -f "$RUN/$name"
+}
+
+cmd_activate_all() {
+	mkdir -p "$RUN"
+	for img in "$LIB"/*.mlp; do
+		[ -f "$img" ] || continue
+		n=${img##*/}; n=${n%.mlp}
+		activate "$n" "$img" && echo "activated $n" || echo "FAILED $n"
+	done
+	# live medium: mount the autoload modules straight from the CD/USB
+	if [ -f "$LIVE_PKGS/AUTOLOAD" ] && ! grep -qw ml.nomodules /proc/cmdline; then
+		while read -r n; do
+			[ -n "$n" ] || continue
+			f=$(awk -F'|' -v n="$n" '$1 == n { print $3 }' "$LIVE_PKGS/INDEX")
+			[ -n "$f" ] && [ -f "$LIVE_PKGS/$f" ] || continue
+			activate "$n" "$LIVE_PKGS/$f" && echo "activated $n (live)" || echo "FAILED $n (live)"
+		done < "$LIVE_PKGS/AUTOLOAD"
+	fi
+}
+
+# --- commands -----------------------------------------------------------------------
+cmd_list() {
+	if [ "$1" = -i ]; then
+		printf '%-20s %-16s %s\n' NAME VERSION STATE
+		{ ls "$LIB"/*.info 2>/dev/null | sed 's|.*/||; s|\.info$||'; ls "$RUN" 2>/dev/null; } | sort -u | while read -r n; do
+			[ -n "$n" ] || continue
+			if [ -f "$LIB/$n.info" ]; then v=$(info_get "$LIB/$n.info" version); st=installed
+				[ "$(info_get "$LIB/$n.info" auto)" = 1 ] && st="$st,dependency"
+			else v=$(info_get "$(sed -n 2p "$RUN/$n")/.mlpkg/info" version); st=live; fi
+			is_active "$n" && st="$st,active"
+			printf '%-20s %-16s %s\n' "$n" "$v" "$st"
+		done
+		return
+	fi
+	ensure_index
+	printf '%-20s %-16s %-7s %-10s %s\n' NAME VERSION SIZE STATE DESCRIPTION
+	cat "$CACHE"/INDEX.* 2>/dev/null | sort -t'|' -u -k1,1 | while IFS='|' read -r n v f s z d deps sec; do
+		[ "$1" = -a ] || [ "$sec" != lib ] || continue
+		st=-
+		[ -f "$LIB/$n.info" ] && st=installed
+		is_active "$n" && { [ "$st" = - ] && st=active || st="$st,active"; }
+		if [ "$z" -ge 1048576 ]; then sz="$((z / 1048576))M"; else sz="$(((z + 1023) / 1024))K"; fi
+		printf '%-20s %-16s %-7s %-10s %s\n' "$n" "$v" "$sz" "$st" "$d"
+	done
+	[ "$1" = -a ] || echo "(libraries and other dependencies are hidden: mlpkg list -a)"
+}
+
+cmd_search() {
+	[ -n "$1" ] || die "usage: mlpkg search <term>"
+	ensure_index
+	cat "$CACHE"/INDEX.* 2>/dev/null | awk -F'|' -v t="$1" 'BEGIN { t = tolower(t) } index(tolower($1 " " $6), t) { printf "%-20s %-16s %s\n", $1, $2, $6 }' | sort -u
+}
+
+cmd_info() {
+	[ -n "$1" ] || die "usage: mlpkg info <name>"
+	if is_active "$1"; then
+		mp=$(sed -n 2p "$RUN/$1"); echo "state:       active at $mp (from $(sed -n 1p "$RUN/$1"))"
+		sed 's/^\([a-z]*\)=/\1:\t/' "$mp/.mlpkg/info" | expand -t 13
+	elif [ -f "$LIB/$1.info" ]; then
+		echo "state:       installed (inactive)"; cat "$LIB/$1.info"
+	fi
+	if lookup "$1"; then
+		echo "repository:  $P_REPO"
+		echo "available:   $P_VER ($((P_SIZE / 1024)) KiB)  sha256 $P_SHA"
+		echo "summary:     $P_DESC"
+		[ -z "$P_DEPS" ] || echo "depends:     $P_DEPS"
+	elif ! is_active "$1" && [ ! -f "$LIB/$1.info" ]; then
+		die "no such package: $1"
+	fi
+}
+
+# install_one NAME|FILE [auto]
+install_one() {
+	auto=$2
+	mkdir -p "$LIB" "$CACHE"
+	if [ -f "$1" ]; then
+		img=$1; sha=$(sha256sum "$img" | cut -d' ' -f1); from="local file"; tmpimg=
+	else
+		lookup "$1" || die "package '$1' not found (try: sudo mlpkg update)"
+		img="$CACHE/$1.mlp.new"; tmpimg=$img
+		echo "downloading $1 $P_VER ($(((P_SIZE + 1023) / 1024)) KiB) from $P_REPO"
+		fetch "$P_REPO/$P_FILE" "$img" || { rm -f "${img:?}"; die "download failed: $P_REPO/$P_FILE"; }
+		sha=$(sha256sum "$img" | cut -d' ' -f1)
+		[ "$sha" = "$P_SHA" ] || { rm -f "${img:?}"; die "checksum mismatch for $1 (expected $P_SHA, got $sha)"; }
+		from=$P_REPO
+	fi
+	tmp=$(mktemp -d)
+	mount -t squashfs -o loop,ro "$img" "$tmp" || { rmdir "$tmp"; die "$img: not a package image"; }
+	inf="$tmp/.mlpkg/info"
+	name=$(info_get "$inf" name); ver=$(info_get "$inf" version); type=$(info_get "$inf" type)
+	[ -n "$name" ] || { umount "$tmp"; rmdir "$tmp"; die "$img: missing package name"; }
+	stamp="sha256=$sha
+installed=$(date -u +%Y-%m-%dT%H:%M:%SZ)${auto:+
+auto=1}"
+	if [ "$type" = files ]; then
+		( install_files "$name" "$tmp" ) || { umount "$tmp"; rmdir "$tmp"; exit 1; }
+		{ cat "$inf"; echo "$stamp"; } > "$LIB/$name.info"
+		umount "$tmp"; rmdir "$tmp"
+		[ -z "$tmpimg" ] || rm -f "${tmpimg:?}"
+	else
+		umount "$tmp"; rmdir "$tmp"
+		is_active "$name" && deactivate "$name"
+		if [ -n "$tmpimg" ]; then mv "$img" "$LIB/$name.mlp"; else cp "$img" "$LIB/$name.mlp"; fi
+		activate "$name" "$LIB/$name.mlp"
+		mp=$(sed -n 2p "$RUN/$name")
+		{ cat "$mp/.mlpkg/info"; echo "$stamp"; } > "$LIB/$name.info"
+	fi
+	echo "installed $name $ver${auto:+ (dependency)}"
+}
+
+# resolve NAME: print the dependencies of NAME that aren't installed (depth first), then NAME
+resolve() {
+	case " $RESOLVED " in *" $1 "*) return 0 ;; esac
+	RESOLVED="$RESOLVED $1"
+	lookup "$1" || die "package '$1' not found (try: sudo mlpkg update)"
+	set -- "$1" $P_DEPS
+	n=$1; shift
+	for d in "$@"; do
+		[ -f "$LIB/$d.info" ] || resolve "$d" || return 1
+	done
+	echo "$n"
+}
+
+cmd_install() {
+	need_root
+	[ $# -gt 0 ] || die "usage: mlpkg install <name|file.mlp>..."
+	for a in "$@"; do
+		if [ -f "$a" ]; then install_one "$a"; continue; fi
+		RESOLVED=
+		order=$(resolve "$a") || exit 1
+		n=$(echo "$order" | grep -c .)
+		[ "$n" -le 1 ] || echo "$a: installing $n packages:" $order
+		for p in $order; do
+			if [ "$p" = "$a" ]; then install_one "$p"; else install_one "$p" auto; fi
+		done
+	done
+}
+
+cmd_remove() {
+	need_root
+	[ $# -gt 0 ] || die "usage: mlpkg remove <name>..."
+	for n in "$@"; do
+		if [ ! -f "$LIB/$n.info" ]; then
+			is_active "$n" && { deactivate "$n"; echo "deactivated live package $n"; continue; }
+			die "$n is not installed"
+		fi
+		r=$(rdepends "$n" | tr '\n' ' ')
+		[ -z "$r" ] || die "$n is needed by: $r(remove those first)"
+		if is_files_pkg "$n"; then remove_files "$n"; else deactivate "$n"; rm -f "${LIB:?}/${n:?}.mlp"; fi
+		rm -f "${LIB:?}/${n:?}.info"
+		echo "removed $n"
+	done
+}
+
+cmd_autoremove() {
+	need_root
+	while :; do
+		gone=
+		for inf in "$LIB"/*.info; do
+			[ -f "$inf" ] || continue
+			n=${inf##*/}; n=${n%.info}
+			[ "$(info_get "$inf" auto)" = 1 ] || continue
+			[ -z "$(rdepends "$n")" ] || continue
+			cmd_remove "$n"; gone=1
+		done
+		[ -n "$gone" ] || break
+	done
+}
+
+cmd_repo() {
+	case "$1" in
+		list|"") repo_list ;;
+		add)    need_root; [ -n "$2" ] || die "usage: mlpkg repo add <url>"
+		        repo_list | grep -qxF "$2" || echo "$2" >> "$REPOS"; cmd_update ;;
+		remove) need_root; [ -n "$2" ] || die "usage: mlpkg repo remove <url>"
+		        grep -vxF "$2" "$REPOS" > "$REPOS.new" || true; mv "$REPOS.new" "$REPOS"; cmd_update ;;
+		*) die "usage: mlpkg repo list|add <url>|remove <url>" ;;
+	esac
+}
+
+cmd_files() {
+	is_files_pkg "$1" && { cat "$LIB/$1.files"; return; }
+	is_active "$1" || die "$1 is not installed"
+	mp=$(sed -n 2p "$RUN/$1")
+	find "$mp" ! -path "$mp/.mlpkg*" | sort
+}
+
+cmd_verify() {
+	rc=0
+	for inf in "$LIB"/*.info; do
+		[ -f "$inf" ] || continue
+		n=${inf##*/}; n=${n%.info}
+		[ -z "$1" ] || [ "$1" = "$n" ] || continue
+		if is_files_pkg "$n"; then
+			miss=$(while read -r f; do [ -e "$f" ] || [ -L "$f" ] || echo "$f"; done < "$LIB/$n.files" | grep -c .)
+			if [ "$miss" = 0 ]; then echo "ok      $n ($(grep -c . "$LIB/$n.files") files)"; else echo "MISSING $n ($miss files)"; rc=1; fi
+			continue
+		fi
+		want=$(info_get "$inf" sha256); got=$(sha256sum "$LIB/$n.mlp" | cut -d' ' -f1)
+		if [ "$want" = "$got" ]; then echo "ok      $n"; else echo "CORRUPT $n"; rc=1; fi
+	done
+	if [ -f "$LIVE_PKGS/INDEX" ]; then
+		while IFS='|' read -r n v f s z d _; do
+			[ -z "$1" ] || [ "$1" = "$n" ] || continue
+			got=$(sha256sum "$LIVE_PKGS/$f" | cut -d' ' -f1)
+			if [ "$got" = "$s" ]; then echo "ok      $n (live medium)"; else echo "CORRUPT $n (live medium)"; rc=1; fi
+		done < "$LIVE_PKGS/INDEX"
+	fi
+	return $rc
+}
+
+CMD=${1:-}; [ $# -gt 0 ] && shift
+case "$CMD" in
+	update)       need_root; cmd_update ;;
+	list)         cmd_list "$@" ;;
+	search)       cmd_search "$@" ;;
+	info)         cmd_info "$@" ;;
+	install)      cmd_install "$@" ;;
+	remove)       cmd_remove "$@" ;;
+	autoremove)   cmd_autoremove ;;
+	repo)         cmd_repo "$@" ;;
+	files)        cmd_files "$@" ;;
+	verify)       cmd_verify "$@" ;;
+	activate)     need_root; [ -f "$LIB/$1.mlp" ] || die "$1 is not installed"; activate "$1" "$LIB/$1.mlp" ;;
+	deactivate)   need_root; deactivate "$1" ;;
+	activate-all) need_root; cmd_activate_all ;;
+	-h|--help|help|"") usage ;;
+	*) usage; exit 1 ;;
+esac

@@ -1,0 +1,22 @@
+#!/bin/sh
+# ml-sysinfo - overview of the running system
+. /etc/os-release
+kv() { printf '\033[1;36m%-12s\033[0m %s\n' "$1" "$2"; }
+mode=installed; [ -d /live/rootfs/usr ] && mode="live ($(grep -q ml.toram /proc/cmdline && echo 'in RAM' || echo 'from medium'))"
+[ -d /sys/firmware/efi ] && fw=UEFI || fw="non-UEFI (device tree)"
+cpu=$(lscpu 2>/dev/null | sed -n 's/^Model name: *//p' | head -n1)
+mem=$(free -m | awk '/^Mem:/ {printf "%d MiB used / %d MiB total (%d MiB available)", $3, $2, $7}')
+echo
+kv OS          "$PRETTY_NAME"
+kv Kernel      "$(uname -r) $(uname -m)"
+kv Boot        "$mode, $fw"
+kv Uptime      "$(uptime | sed 's/.*up \([^,]*\),.*/\1/')"
+kv CPU         "${cpu:-unknown} x $(nproc)"
+kv Memory      "$mem"
+kv Root        "$(df -h / | awk 'NR==2 {print $3 " used of " $2 " (" $1 ")"}')"
+kv Machine     "$(cat /sys/firmware/devicetree/base/model 2>/dev/null | tr -d '\0' || cat /sys/class/dmi/id/product_name 2>/dev/null)"
+[ -n "$DISPLAY" ] && kv Display "$(xrandr --query 2>/dev/null | awk '/\*/ {print $1; exit}')"
+kv Network     "$(ip -4 -br addr | awk '$1 != "lo" {printf "%s %s  ", $1, $3}')"
+kv Packages    "$(ls /run/mlpkg/active 2>/dev/null | tr '\n' ' ')"
+kv Shell       "$SHELL"
+echo

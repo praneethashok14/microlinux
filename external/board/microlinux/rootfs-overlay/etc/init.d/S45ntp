@@ -1,0 +1,12 @@
+#!/bin/sh
+# Boards without an RTC (e.g. Raspberry Pi) boot in 1970, which breaks TLS
+# certificate validation. Sync the clock once the network is up.
+case "$1" in
+	start)
+		grep -qw ml.nontp /proc/cmdline && exit 0
+		( for i in 1 2 3 4 5 6 7 8 9 10; do
+			ntpd -n -q -p pool.ntp.org >/dev/null 2>&1 && { logger -t ntp "clock synchronised: $(date)"; exit 0; }
+			sleep 3
+		  done ) &
+		;;
+esac

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Serial login on the first serial console that exists; idle if none.
+for t in ttyAMA0 ttyS0; do
+	if [ -c /dev/$t ] && stty -F /dev/$t >/dev/null 2>&1; then
+		exec /sbin/getty -L 115200 $t vt100
+	fi
+done
+exec sleep 2147483647

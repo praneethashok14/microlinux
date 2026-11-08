@@ -1,0 +1,157 @@
+#!/bin/sh
+# ml-install - install MicroLinux from the live medium to a disk
+#
+#   sudo ml-install [-y] [--hostname NAME] DISK
+#
+# Creates a GPT with a 256 MiB EFI system partition (FAT32, label MLBOOT) and
+# an ext4 root (label MLROOT) on DISK, copies the pristine system image, the
+# active mlpkg packages, the kernel and the GRUB EFI loader (installed to the
+# removable-media path EFI/BOOT/BOOT<arch>.EFI, which every UEFI firmware boots
+# without NVRAM entries). On x86_64 it also adds a 1 MiB BIOS boot partition
+# and installs GRUB for BIOS, so the disk boots on BIOS and UEFI PCs.
+# ALL DATA ON DISK IS DESTROYED.
+set -e
+YES=; HOST=microlinux
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-y) YES=1 ;;
+		--hostname) HOST=$2; shift ;;
+		-h|--help) sed -n '2,13s/^# \{0,1\}//p' "$0"; exit 0 ;;
+		*) DISK=$1 ;;
+	esac
+	shift
+done
+die() { echo "ml-install: $*" >&2; exit 1; }
+[ "$(id -u)" = 0 ] || die "run as root: sudo ml-install DISK"
+[ -d /live/rootfs/usr ] || die "not running from the MicroLinux live medium"
+
+if [ -z "$DISK" ]; then
+	echo "Available disks:"
+	lsblk -dpno NAME,SIZE,MODEL,TRAN | grep -v -e '/dev/loop' -e '/dev/sr' -e '/dev/zram'
+	printf "Disk to install to (e.g. /dev/vda): "; read -r DISK
+fi
+[ -b "$DISK" ] || die "$DISK is not a block device"
+live=$(findfs LABEL=MICROLINUX 2>/dev/null || true)
+case "$live" in "$DISK"*) die "$DISK holds the live medium you booted from" ;; esac
+
+size=$(( $(cat "/sys/class/block/${DISK##*/}/size") / 2048 ))
+[ "$size" -ge 2048 ] || die "$DISK is too small (${size} MiB, need at least 2048 MiB)"
+
+echo
+echo "Installing MicroLinux $(cat /etc/microlinux-release) to $DISK (${size} MiB)."
+lsblk "$DISK"
+if [ -z "$YES" ]; then
+	printf "\nALL DATA ON %s WILL BE ERASED. Type YES to continue: " "$DISK"; read -r ans
+	[ "$ans" = YES ] || die "aborted"
+fi
+
+case "$DISK" in *[0-9]) P=${DISK}p ;; *) P=$DISK ;; esac
+T=/mnt/ml-target
+BIOS=; command -v grub-install >/dev/null && [ -d /usr/lib/grub/i386-pc ] && BIOS=1
+case "$(uname -m)" in aarch64) SERIAL=ttyAMA0 ;; *) SERIAL=ttyS0 ;; esac
+
+echo "==> partitioning"
+grep -q "^$DISK" /proc/mounts && { grep "^$DISK" /proc/mounts | cut -d' ' -f2 | sort -r | xargs -r umount; }
+wipefs -aq "$DISK"
+# partitions 1 (ESP) and 2 (root) are the same everywhere; BIOS boot is number 3
+if [ -n "$BIOS" ]; then
+	parted -s "$DISK" mklabel gpt \
+		mkpart MLBOOT fat32 2MiB 258MiB set 1 esp on \
+		mkpart MLROOT ext4 258MiB 100% \
+		mkpart BIOSBOOT 1MiB 2MiB set 3 bios_grub on
+else
+	parted -s "$DISK" mklabel gpt \
+		mkpart MLBOOT fat32 1MiB 257MiB set 1 esp on \
+		mkpart MLROOT ext4 257MiB 100%
+fi
+partx -u "$DISK" 2>/dev/null || true
+n=0; while [ ! -b "${P}2" ] && [ $n -lt 10 ]; do sleep 1; n=$((n + 1)); done
+[ -b "${P}2" ] || die "partitions did not appear"
+
+echo "==> creating filesystems"
+mkfs.vfat -F 32 -n MLBOOT "${P}1" >/dev/null
+mkfs.ext4 -q -F -L MLROOT "${P}2"
+ROOT_UUID=$(blkid -s UUID -o value "${P}2")
+ESP_UUID=$(blkid -s UUID -o value "${P}1")
+
+echo "==> copying system ($(du -sh /live/rootfs 2>/dev/null | cut -f1))"
+mkdir -p $T
+mount "${P}2" $T
+cp -a /live/rootfs/. $T/
+mkdir -p $T/boot/efi
+mount "${P}1" $T/boot/efi
+
+echo "==> copying packages"
+mkdir -p $T/var/lib/mlpkg/installed
+for a in /run/mlpkg/active/*; do
+	[ -f "$a" ] || continue
+	name=${a##*/}; img=$(sed -n 1p "$a"); mp=$(sed -n 2p "$a")
+	cp "$img" "$T/var/lib/mlpkg/installed/$name.mlp"
+	{ cat "$mp/.mlpkg/info"; echo "sha256=$(sha256sum "$img" | cut -d' ' -f1)"; echo "installed=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; } \
+		> "$T/var/lib/mlpkg/installed/$name.info"
+	echo "    $name"
+done
+
+echo "==> installing boot loader and kernel"
+mkdir -p $T/boot/efi/EFI/BOOT $T/boot/efi/boot/grub
+cp /live/medium/EFI/BOOT/BOOT*.EFI $T/boot/efi/EFI/BOOT/
+cp /live/medium/boot/vmlinuz /live/medium/boot/initramfs.cpio.gz $T/boot/efi/boot/
+cat > $T/boot/efi/boot/grub/grub.cfg <<G
+set default=0
+set timeout=3
+insmod all_video
+search --no-floppy --fs-uuid --set=root $ESP_UUID
+if [ "\$grub_platform" = pc ]; then
+	set gfxpayload=1280x800x32,1024x768x32,auto
+fi
+set args="root=UUID=$ROOT_UUID rootfstype=ext4 rw console=$SERIAL,115200 console=tty1"
+menuentry "MicroLinux $(cat /etc/microlinux-release)" {
+	linux /boot/vmlinuz \$args quiet loglevel=3
+	initrd /boot/initramfs.cpio.gz
+}
+menuentry "MicroLinux (text mode)" {
+	linux /boot/vmlinuz \$args loglevel=4 ml.nox
+	initrd /boot/initramfs.cpio.gz
+}
+menuentry "MicroLinux (recovery: root shell, no services)" {
+	linux /boot/vmlinuz \$args loglevel=4 ml.recovery ml.nox
+	initrd /boot/initramfs.cpio.gz
+}
+menuentry "MicroLinux (emergency initramfs shell)" {
+	linux /boot/vmlinuz \$args loglevel=7 ml.break
+	initrd /boot/initramfs.cpio.gz
+}
+if [ "\$grub_platform" = efi ]; then
+	menuentry "UEFI firmware settings" { fwsetup }
+fi
+G
+if [ -n "$BIOS" ]; then
+	echo "    BIOS boot (GRUB i386-pc)"
+	grub-install --target=i386-pc --boot-directory=$T/boot/efi/boot \
+		--modules="part_gpt fat" --locales= --fonts= --themes= "$DISK" > /tmp/grub-install.log 2>&1 ||
+		{ cat /tmp/grub-install.log; die "grub-install failed"; }
+fi
+
+echo "==> configuring"
+cat >> $T/etc/fstab <<F
+UUID=$ROOT_UUID  /          ext4  defaults,noatime  0 1
+UUID=$ESP_UUID   /boot/efi  vfat  defaults,umask=0077  0 2
+F
+echo "$HOST" > $T/etc/hostname
+sed -i "s/^127.0.1.1.*//" $T/etc/hosts; echo "127.0.1.1	$HOST" >> $T/etc/hosts
+rm -f $T/etc/sudoers.d/live
+echo 'SYSLOGD_ARGS="-s 2048 -b 3"' > $T/etc/default/syslogd   # persistent /var/log/messages, rotated
+sed -i 's|^file:///live/medium/packages$|# file:///live/medium/packages  (live medium only)|' $T/etc/mlpkg/repos.conf
+cp -a /etc/wpa_supplicant/wpa_supplicant.conf $T/etc/wpa_supplicant/ 2>/dev/null || true
+
+if [ -z "$YES" ]; then
+	echo "Set the password for 'root':"; chroot $T /usr/bin/passwd root
+	echo "Set the password for 'user':"; chroot $T /usr/bin/passwd user
+else
+	echo "    (-y: keeping default passwords root/microlinux and user/live - change them!)"
+fi
+
+sync
+umount $T/boot/efi $T
+echo
+echo "Done. Remove the live medium and reboot to start MicroLinux from $DISK."

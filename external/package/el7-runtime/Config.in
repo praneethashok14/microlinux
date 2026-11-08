@@ -1,0 +1,12 @@
+config BR2_PACKAGE_EL7_RUNTIME
+	bool "el7-runtime (CentOS 7 userspace, as mlpkg module)"
+	depends on BR2_aarch64 || BR2_x86_64
+	help
+	  Exact RHEL/CentOS 7 (glibc 2.17) runtime built from the official
+	  CentOS 7.9.2009 RPMs pinned in el7-<arch>.lock (AltArch tree
+	  for aarch64, main tree for x86_64). It is
+	  packaged as the mlpkg module el7-runtime, mounted at /opt/el7, and
+	  used by el7-run / el7-chroot for binaries that need EL7-only
+	  libraries (libssl.so.10, libreadline.so.6, ...).
+
+	  Requires rpm2cpio and cpio on the build host.
