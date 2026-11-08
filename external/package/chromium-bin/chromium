@@ -1,0 +1,4 @@
+#!/bin/sh
+# Chromium on MicroLinux: no keyring daemon, so passwords are stored in the
+# (Chromium-encrypted) profile; the sandbox uses user namespaces.
+exec /opt/chromium/chrome --password-store=basic "$@"

@@ -8,3 +8,4 @@ endmenu
 source "$BR2_EXTERNAL_MICROLINUX_PATH/package/ml-settings/Config.in"
 source "$BR2_EXTERNAL_MICROLINUX_PATH/package/shim-signed-bin/Config.in"
 source "$BR2_EXTERNAL_MICROLINUX_PATH/package/ml-software/Config.in"
+source "$BR2_EXTERNAL_MICROLINUX_PATH/package/chromium-bin/Config.in"

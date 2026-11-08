@@ -43,7 +43,7 @@ target = {n for n, d in info.items() if d.get("type") == "target"}
 
 # dependencies that external.mk switches off (optional features of base packages)
 IGNORED_EDGES = {("util-linux", "python3"), ("parted", "lvm2"), ("libinput", "lua"),
-                 ("libdrm", "valgrind"), ("mesa3d", "valgrind")}
+                 ("libdrm", "valgrind"), ("mesa3d", "valgrind"), ("libgtk3", "cups")}
 
 
 def deps(n):

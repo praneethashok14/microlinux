@@ -126,6 +126,39 @@ while IFS='|' read -r name ver f sha size desc; do
 	echo "$name|$ver|$f|$sha|$size|$desc||app" >> "$R/INDEX"
 	case "$name" in firefox) echo "$name|Internet & network" ;; *) echo "$name|System" ;; esac >> "$R/CATEGORIES"
 done < "$P/INDEX"
+# image packages for the repository only (pkgroot-repo/*, e.g. Chromium): mounted
+# under /opt like Firefox; "builddeps=" names Buildroot packages, which become
+# the repository packages they depend on (plus those packages' dependencies)
+for d in "$B"/pkgroot-repo/*/; do
+	[ -f "$d/.mlpkg/info" ] || continue
+	inf="$d/.mlpkg/info"
+	name=$(sed -n 's/^name=//p' "$inf"); ver=$(sed -n 's/^version=//p' "$inf")
+	desc=$(sed -n 's/^description=//p' "$inf"); cat=$(sed -n 's/^category=//p' "$inf")
+	dep=""
+	for b in $(sed -n 's/^builddeps=//p' "$inf"); do
+		[ -f "$B/repo-root/$b/.mlpkg/info" ] || continue   # in the base system
+		dep="$dep $b $(sed -n 's/^depends=//p' "$B/repo-root/$b/.mlpkg/info")"
+	done
+	dep=$(echo $dep | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ *$//')
+	# (builddeps= stays: this step must give the same result every time it runs)
+	sed -i '/^depends=/d' "$inf"; echo "depends=$dep" >> "$inf"
+	libs=$( { find "$d" -name '*.so*' -printf '%f\n'
+		for n in $dep; do find "$B/repo-root/$n" -name '*.so*' -printf '%f\n'; done; } | sort -u)
+	while IFS= read -r f; do
+		for lib in $(needed "$f"); do
+			grep -qxF "$lib" <<< "$libs" && continue
+			findlib >/dev/null && continue
+			echo "  repo $name: ${f#$d} needs $lib (not in base, package or dependencies)"; bad=1
+		done
+	done < <(find "$d" -type f \( -perm -u+x -o -name '*.so*' \) -exec sh -c 'head -c4 "$1" | grep -q ELF' _ {} \; -print)
+	[ $bad = 0 ] || { echo "$name: unresolved libraries"; exit 1; }
+	f=$(printf '%s' "$name-$ver" | tr -c 'A-Za-z0-9._-' '_').mlp
+	mksquashfs "$d" "$R/$f" -comp xz -b 1M -noappend -no-progress -quiet -all-root -mkfs-time 0 -all-time 0 >/dev/null
+	echo "$name|$ver|$f|$(sha256sum "$R/$f" | cut -d' ' -f1)|$(stat -c %s "$R/$f")|$desc|$dep|app" >> "$R/INDEX"
+	echo "$name|${cat:-Other}" >> "$R/CATEGORIES"
+	msg "  $f ($(( $(stat -c %s "$R/$f") / 1048576 )) MiB, repository only; needs: ${dep:-nothing})"
+done
+
 if [ -f "$KEYS/repo/repo.key" ]; then
 	openssl dgst -sha256 -sign "$KEYS/repo/repo.key" -out "$R/INDEX.sig" "$R/INDEX"
 	openssl dgst -sha256 -verify "$BOARD/keys/repo.pub" -signature "$R/INDEX.sig" "$R/INDEX" >/dev/null

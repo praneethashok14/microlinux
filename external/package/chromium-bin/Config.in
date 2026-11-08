@@ -1,0 +1,16 @@
+config BR2_PACKAGE_CHROMIUM_BIN
+	bool "chromium-bin (ungoogled-chromium, for the package repository)"
+	depends on BR2_aarch64 || BR2_x86_64
+	depends on BR2_TOOLCHAIN_USES_GLIBC
+	depends on BR2_PACKAGE_LIBGTK3_X11
+	depends on BR2_PACKAGE_LIBNSPR_ARCH_SUPPORT
+	select BR2_PACKAGE_LIBNSS
+	select BR2_PACKAGE_CUPS # libcups.so.2
+	help
+	  The portable Linux build of ungoogled-chromium (Chromium without
+	  Google services). It is not put on the ISO: it is published in the
+	  package repository as the image package "chromium" (mounted at
+	  /opt/chromium); NSS/NSPR and libcups become repository packages
+	  it depends on.
+
+	  https://github.com/ungoogled-software/ungoogled-chromium-portablelinux

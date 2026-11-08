@@ -26,6 +26,9 @@ PARTED_CONF_OPTS := $(filter-out --enable-device-mapper,$(PARTED_CONF_OPTS)) --d
 LIBINPUT_CONF_OPTS := $(filter-out -Dlua-plugins=enabled,$(LIBINPUT_CONF_OPTS)) -Dlua-plugins=disabled
 LIBDRM_CONF_OPTS := $(filter-out -Dvalgrind=enabled,$(LIBDRM_CONF_OPTS)) -Dvalgrind=disabled
 MESA3D_CONF_OPTS := $(filter-out -Dvalgrind=enabled,$(MESA3D_CONF_OPTS)) -Dvalgrind=disabled
+# CUPS is enabled only for Chromium (libcups, a repository package): GTK's
+# base-system print dialog keeps its file/lpr backends
+LIBGTK3_CONF_OPTS := $(filter-out -Dprint_backends=file$(comma)cups,$(LIBGTK3_CONF_OPTS)) -Dprint_backends=file,lpr
 
 # SVG support for GTK (symbolic icons, theme assets, SVG pictures): build
 # librsvg's gdk-pixbuf loader; post-build.sh registers it in loaders.cache
