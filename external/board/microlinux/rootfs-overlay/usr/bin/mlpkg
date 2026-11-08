@@ -51,12 +51,30 @@ EOF
 # --- repositories -------------------------------------------------------------
 repo_list() { grep -v '^[[:space:]]*\(#\|$\)' "$REPOS" 2>/dev/null || true; }
 
+CURL="curl -fsSL --connect-timeout 15 --retry 4 --retry-delay 2 --retry-all-errors"
+
 fetch() { # url dest
 	case "$1" in
 		file://*) cp "${1#file://}" "$2" ;;
-		http://*|https://*) curl -fsSL --retry 2 --connect-timeout 15 -o "$2" "$1" ;;
+		http://*|https://*) $CURL -o "$2" "$1" 2>/dev/null || gh_asset_fetch "$1" "$2" ;;
 		*) die "unsupported URL: $1" ;;
 	esac
+}
+
+# GitHub release downloads (github.com/OWNER/REPO/releases/download/TAG/FILE)
+# sometimes fail with HTTP 504; GitHub's API serves the same file. The SHA-256
+# from the INDEX still checks whatever arrives.
+gh_asset_fetch() { # url dest
+	case "$1" in https://github.com/*/*/releases/download/*/*) ;; *) return 1 ;; esac
+	p=${1#https://github.com/}
+	repo=$(echo "$p" | cut -d/ -f1,2); tag=$(echo "$p" | cut -d/ -f5); file=${p##*/}
+	api=$($CURL "https://api.github.com/repos/$repo/releases/tags/$tag" 2>/dev/null | tr ',{}' '\n\n\n' |
+		sed 's/^[[:space:]]*//; s/":[[:space:]]*"/":"/' |
+		awk -v want="\"name\":\"$file\"" '
+			/^"url":"https:\/\/api\.github\.com\/repos\/.*\/releases\/assets\// { u = $0 }
+			$0 == want && u { sub(/^"url":"/, "", u); sub(/"$/, "", u); print u; exit }')
+	[ -n "$api" ] || return 1
+	$CURL -H "Accept: application/octet-stream" -o "$2" "$api"
 }
 
 cmd_update() {
