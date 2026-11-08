@@ -58,7 +58,7 @@ check_deps() { # name dir: every NEEDED library must be in the rootfs or the pac
 	local pkglibs; pkglibs=$(find "$dir" -name '*.so*' -printf '%f\n' | sort -u)
 	while IFS= read -r f; do
 		for lib in $(needed "$f"); do
-			echo "$pkglibs" | grep -qxF "$lib" && continue
+			grep -qxF "$lib" <<< "$pkglibs" && continue
 			findlib >/dev/null && continue
 			echo "  $name: ${f#$dir/} needs $lib (not found)"; missing=1
 		done
@@ -105,7 +105,7 @@ for d in "$B"/repo-root/*/; do
 	libs=$(repo_libs "$name")
 	while IFS= read -r f; do
 		for lib in $(needed "$f"); do
-			echo "$libs" | grep -qxF "$lib" && continue
+			grep -qxF "$lib" <<< "$libs" && continue
 			findlib >/dev/null && continue
 			echo "  repo $name: ${f#$d} needs $lib (not in base, package or dependencies)"; bad=1
 		done
