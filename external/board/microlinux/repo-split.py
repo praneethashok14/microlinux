@@ -208,6 +208,20 @@ for n in sorted(nonempty):
         f.write(f"name={n}\nversion={info[n].get('version') or '0'}\ntype=files\n"
                 f"section={'app' if n in roots else 'lib'}\ndepends={' '.join(dep)}\n"
                 f"description={description(n)}\nlicense={info[n].get('licenses') or '?'}\n")
+# category of every package, for the package browser: from the
+# "[category: ...]" in repo.config's section headings
+category, cat = {}, None
+for line in open(os.path.join(EXT, "configs", "fragments", "repo.config")):
+    m = re.search(r"\[category: ([^\]]+)\]", line)
+    if m:
+        cat = m.group(1)
+    m = re.match(r"(BR2_PACKAGE_\w+)=y", line)
+    if m and m.group(1) in sym and cat:
+        category.setdefault(sym[m.group(1)], cat)
+with open(os.path.join(OUT, "CATEGORIES"), "w") as f:
+    for n in sorted(nonempty):
+        f.write(f"{n}|{category.get(n, 'Libraries')}\n")
+
 # source of every package in the repository (license compliance: corresponding
 # source is the upstream release plus the Buildroot patches, pinned by Buildroot)
 with open(os.path.join(OUT, "SOURCES.txt"), "w") as f:

@@ -38,6 +38,11 @@ fi
 [ -e "$T/usr/lib64" ] || ln -s lib "$T/usr/lib64"
 [ -e "$T/lib64" ] || ln -s usr/lib64 "$T/lib64"
 
+# public keys: mlpkg checks repository INDEX signatures with repo.pub; MOK.cer
+# is the Secure Boot certificate (for mokutil / MOK Manager)
+mkdir -p "$T/usr/share/microlinux/keys"
+cp "$BR2_EXTERNAL_MICROLINUX_PATH"/board/microlinux/keys/* "$T/usr/share/microlinux/keys/"
+
 # package repositories: the live medium first, then the online repository
 grep -v '^#' "$BR2_EXTERNAL_MICROLINUX_PATH/board/microlinux/repo-url" | sed "s/@ARCH@/$ARCH/" >> "$T/etc/mlpkg/repos.conf"
 

@@ -17,6 +17,8 @@
 #
 # Repositories (/etc/mlpkg/repos.conf) are file://, http:// or https:// URLs of
 # directories with an INDEX:  name|version|file|sha256|size|description|depends|section
+# An http(s) repository must sign its INDEX (INDEX.sig, verified with the key in
+# /usr/share/microlinux/keys/repo.pub); a line "URL unsigned" accepts one without.
 set -e
 
 LIB=/var/lib/mlpkg/installed
@@ -38,10 +40,11 @@ usage: mlpkg <command> [args]
   info <name>            show package details
   install <name|file>... download, verify and install packages and their dependencies
   remove <name>...       uninstall packages
+  upgrade [name]...      update installed packages that have a newer version
   autoremove             remove dependencies that nothing needs any more
   files <name>           list files of an installed package
   verify [name]          check installed packages (image SHA-256 / files present)
-  repo list|add <url>|remove <url>   manage repositories
+  repo list|add <url> [unsigned]|remove <url>   manage repositories
   activate <name>        mount an installed package
   deactivate <name>      unmount a package
   activate-all           mount all installed packages (+ live-medium autoload)
@@ -50,6 +53,28 @@ EOF
 
 # --- repositories -------------------------------------------------------------
 repo_list() { grep -v '^[[:space:]]*\(#\|$\)' "$REPOS" 2>/dev/null || true; }
+REPO_KEY=/usr/share/microlinux/keys/repo.pub
+
+# fetch_index URL OPTION N DIR: download the INDEX of repository URL into
+# DIR/INDEX.N, checking its signature unless the repository is local (file://)
+# or marked "unsigned"; prints why on failure
+fetch_index() {
+	fetch "$1/INDEX" "$4/INDEX.$3.tmp" 2>/dev/null || { rm -f "${4:?}/INDEX.$3.tmp"; echo "unreachable"; return 1; }
+	case "$1" in
+		file://*) ;;
+		*)	if [ "$2" != unsigned ]; then
+				if ! fetch "$1/INDEX.sig" "$4/INDEX.$3.sig" 2>/dev/null ||
+				   ! openssl dgst -sha256 -verify "$REPO_KEY" -signature "$4/INDEX.$3.sig" "$4/INDEX.$3.tmp" >/dev/null 2>&1; then
+					rm -f "${4:?}/INDEX.$3.tmp" "${4:?}/INDEX.$3.sig"
+					echo "INDEX signature missing or invalid - NOT used"
+					return 1
+				fi
+				rm -f "${4:?}/INDEX.$3.sig"
+			fi ;;
+	esac
+	mv "$4/INDEX.$3.tmp" "$4/INDEX.$3"
+	echo "$1" > "$4/REPO.$3"
+}
 
 CURL="curl -fsSL --connect-timeout 15 --retry 4 --retry-delay 2 --retry-all-errors"
 
@@ -79,19 +104,21 @@ gh_asset_fetch() { # url dest
 
 cmd_update() {
 	mkdir -p "$CACHE"
-	rm -f "$CACHE"/INDEX.* "$CACHE"/REPO.*
+	rm -f "$CACHE"/INDEX.* "$CACHE"/REPO.* "$CACHE"/CATEGORIES.*
 	n=0
-	for r in $(repo_list); do
+	repo_list > "$CACHE/repos.tmp"
+	while read -r r opt; do
 		n=$((n + 1))
-		if fetch "$r/INDEX" "$CACHE/INDEX.$n.tmp" 2>/dev/null; then
-			mv "$CACHE/INDEX.$n.tmp" "$CACHE/INDEX.$n"
-			echo "$r" > "$CACHE/REPO.$n"
-			echo "  ok   $r ($(grep -c . "$CACHE/INDEX.$n") packages)"
+		if why=$(fetch_index "$r" "$opt" "$n" "$CACHE"); then
+			# optional: package categories for the package browser (ml-software)
+			fetch "$r/CATEGORIES" "$CACHE/CATEGORIES.$n" 2>/dev/null || rm -f "${CACHE:?}/CATEGORIES.$n"
+			s=; case "$r" in file://*) ;; *) [ "$opt" = unsigned ] && s=", UNSIGNED" || s=", signature ok" ;; esac
+			echo "  ok   $r ($(grep -c . "$CACHE/INDEX.$n") packages$s)"
 		else
-			rm -f "$CACHE/INDEX.$n.tmp"
-			echo "  skip $r (unreachable)"
+			echo "  skip $r ($why)"
 		fi
-	done
+	done < "$CACHE/repos.tmp"
+	rm -f "$CACHE/repos.tmp"
 }
 
 ensure_index() {
@@ -99,10 +126,11 @@ ensure_index() {
 	if [ "$(id -u)" = 0 ]; then cmd_update >/dev/null; return 0; fi
 	# read-only fallback for unprivileged users: read repositories directly
 	TMPIDX=$(mktemp -d); CACHE=$TMPIDX; n=0
-	for r in $(repo_list); do
+	repo_list > "$CACHE/repos.tmp"
+	while read -r r opt; do
 		n=$((n + 1))
-		fetch "$r/INDEX" "$CACHE/INDEX.$n" 2>/dev/null && echo "$r" > "$CACHE/REPO.$n" || true
-	done
+		fetch_index "$r" "$opt" "$n" "$CACHE" >/dev/null || true
+	done < "$CACHE/repos.tmp"
 }
 
 # lookup NAME -> sets P_VER P_FILE P_SHA P_SIZE P_DESC P_DEPS P_SEC P_REPO, status 1 if not found
@@ -152,12 +180,18 @@ $(echo "$conflicts" | head -n 20)"
 	tree_files "$src" | while read -r f; do [ "$(readlink "$f" 2>/dev/null)" = /bin/busybox ] && echo "$f"; done > "$LIB/$name.busybox"
 	( cd "$src" && find . -mindepth 1 -type d ! -path './.mlpkg' ! -path './.mlpkg/*' | sed 's|^\.||' ) |
 		while read -r d; do [ -e "$d" ] || echo "$d"; done > "$LIB/$name.dirs"
+	old=; [ -f "$LIB/$name.files" ] && { old=$(mktemp); cp "$LIB/$name.files" "$old"; }
 	tree_files "$src" > "$LIB/$name.files"
 	( cd "$src" && for e in * .[!.]*; do
 		[ -e "$e" ] || [ -L "$e" ] || continue
 		[ "$e" = .mlpkg ] && continue
 		cp -a "$e" / || exit 1
 	done ) || die "$name: copying files failed"
+	# reinstall/upgrade: remove files of the old version that the new one doesn't have
+	if [ -n "$old" ]; then
+		grep -vxF -f "$LIB/$name.files" "$old" | while read -r f; do [ -n "$f" ] && rm -f -- "${f:?}"; done
+		rm -f "${old:?}"
+	fi
 	triggers "$LIB/$name.files"
 }
 
@@ -377,6 +411,29 @@ cmd_remove() {
 	done
 }
 
+cmd_upgrade() {
+	need_root
+	ensure_index
+	count=0
+	for inf in "$LIB"/*.info; do
+		[ -f "$inf" ] || continue
+		name=${inf##*/}; name=${name%.info}
+		if [ $# -gt 0 ]; then case " $* " in *" $name "*) ;; *) continue ;; esac; fi
+		lookup "$name" || continue
+		cur=$(info_get "$inf" version)
+		[ "$cur" != "$P_VER" ] || continue
+		echo "upgrading $name $cur -> $P_VER"
+		auto=$(info_get "$inf" auto)
+		RESOLVED=
+		for p in $(resolve "$name"); do
+			[ "$p" = "$name" ] || install_one "$p" auto   # new dependencies
+		done
+		if [ "$auto" = 1 ]; then install_one "$name" auto; else install_one "$name"; fi
+		count=$((count + 1))
+	done
+	echo "$count package(s) upgraded"
+}
+
 cmd_autoremove() {
 	need_root
 	while :; do
@@ -395,11 +452,11 @@ cmd_autoremove() {
 cmd_repo() {
 	case "$1" in
 		list|"") repo_list ;;
-		add)    need_root; [ -n "$2" ] || die "usage: mlpkg repo add <url>"
-		        repo_list | grep -qxF "$2" || echo "$2" >> "$REPOS"; cmd_update ;;
+		add)    need_root; [ -n "$2" ] || die "usage: mlpkg repo add <url> [unsigned]"
+		        repo_list | grep -q "^$2\( \|$\)" || echo "$2${3:+ $3}" >> "$REPOS"; cmd_update ;;
 		remove) need_root; [ -n "$2" ] || die "usage: mlpkg repo remove <url>"
-		        grep -vxF "$2" "$REPOS" > "$REPOS.new" || true; mv "$REPOS.new" "$REPOS"; cmd_update ;;
-		*) die "usage: mlpkg repo list|add <url>|remove <url>" ;;
+		        grep -v "^$2\( \|$\)" "$REPOS" > "$REPOS.new" || true; mv "$REPOS.new" "$REPOS"; cmd_update ;;
+		*) die "usage: mlpkg repo list|add <url> [unsigned]|remove <url>" ;;
 	esac
 }
 
@@ -443,6 +500,7 @@ case "$CMD" in
 	install)      cmd_install "$@" ;;
 	remove)       cmd_remove "$@" ;;
 	autoremove)   cmd_autoremove ;;
+	upgrade)      cmd_upgrade "$@" ;;
 	repo)         cmd_repo "$@" ;;
 	files)        cmd_files "$@" ;;
 	verify)       cmd_verify "$@" ;;

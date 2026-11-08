@@ -11,6 +11,8 @@ ARCH=$(sed -n 's/^BR2_ARCH="\(.*\)"/\1/p' "$BR2_CONFIG")
 READELF="$H/bin/$ARCH-buildroot-linux-gnu-readelf"
 VERSION=$(cat "$T/etc/microlinux-release")
 export PATH="$H/bin:$H/sbin:$PATH"
+# private signing keys (scripts/make-keys.sh); without them nothing is signed
+KEYS="$BR2_EXTERNAL_MICROLINUX_PATH/../keys"
 
 msg() { echo ">>> microlinux: $*"; }
 
@@ -121,8 +123,16 @@ done
 while IFS='|' read -r name ver f sha size desc; do
 	cp "$P/$f" "$R/$f"
 	echo "$name|$ver|$f|$sha|$size|$desc||app" >> "$R/INDEX"
+	case "$name" in firefox) echo "$name|Internet & network" ;; *) echo "$name|System" ;; esac >> "$R/CATEGORIES"
 done < "$P/INDEX"
-cp "$B/repo-root/SOURCES.txt" "$R/SOURCES.txt"
+cp "$B/repo-root/SOURCES.txt" "$B/repo-root/CATEGORIES" "$R/"
+if [ -f "$KEYS/repo/repo.key" ]; then
+	openssl dgst -sha256 -sign "$KEYS/repo/repo.key" -out "$R/INDEX.sig" "$R/INDEX"
+	openssl dgst -sha256 -verify "$BOARD/keys/repo.pub" -signature "$R/INDEX.sig" "$R/INDEX" >/dev/null
+	msg "  INDEX signed"
+else
+	echo "WARNING: $KEYS/repo/repo.key missing: repository INDEX not signed (mlpkg will refuse it online)"
+fi
 msg "  $(grep -c . "$R/INDEX") packages, $(du -sm "$R" | cut -f1) MiB"
 
 # the base system must keep what it boots with (repo-split.py must never move these)
@@ -164,6 +174,45 @@ if [ -f "$B/grub-eltorito.img" ]; then
 	HYBRID_MBR=$(ls "$BUILD_DIR"/grub2-*/build-i386-pc/grub-core/boot_hybrid.img | head -n1)
 	[ -f "$HYBRID_MBR" ] || { echo "boot_hybrid.img not found"; exit 1; }
 fi
+# --- UEFI boot files (efi-boot/) ----------------------------------------------------
+# Secure Boot (x86_64, when the shim package and the signing key exist):
+#   BOOTX64.EFI  shim, signed by Microsoft (Debian's shim-signed)
+#   grubx64.efi  GRUB with SBAT metadata, signed with keys/secureboot/MOK.key
+#   mmx64.efi    MOK Manager (Debian-signed), to enroll the MicroLinux key
+# and the kernel is signed with the same key. Otherwise: GRUB as built.
+E="$B/efi-boot"; rm -rf "$E"; mkdir -p "$E"
+SB=""
+if [ -f "$B/shim/shimx64.efi" ] && [ -f "$KEYS/secureboot/MOK.key" ]; then
+	SB=1
+	GRUBCORE=$(ls -d "$BUILD_DIR"/grub2-*/build-x86_64-efi/grub-core | head -n1)
+	MODS=$(sed -n 's/^BR2_TARGET_GRUB2_BUILTIN_MODULES_EFI="\(.*\)"/\1/p' "$BR2_CONFIG")
+	# SBAT: GRUB 2.12 with Buildroot's backport of the February 2025 security
+	# fixes (CVE-2024-45774.. / CVE-2025-0622..), which is generation 5
+	cat > "$B/grub-sbat.csv" <<'SBAT'
+sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md
+grub,5,Free Software Foundation,grub,2.12,https://www.gnu.org/software/grub/
+grub.microlinux,1,MicroLinux,grub2,2.12,https://github.com/praneethashok14/microlinux
+SBAT
+	grub-mkimage -d "$GRUBCORE" -O x86_64-efi -o "$B/grubx64.efi.unsigned" -p /EFI/BOOT \
+		-c "$BOARD/grub-embed.cfg" --sbat "$B/grub-sbat.csv" $MODS
+	sbsign --key "$KEYS/secureboot/MOK.key" --cert "$KEYS/secureboot/MOK.crt" \
+		--output "$E/grubx64.efi" "$B/grubx64.efi.unsigned" 2>/dev/null
+	sbsign --key "$KEYS/secureboot/MOK.key" --cert "$KEYS/secureboot/MOK.crt" \
+		--output "$B/vmlinuz.signed" "$KERNEL" 2>/dev/null
+	sbverify --cert "$KEYS/secureboot/MOK.crt" "$E/grubx64.efi" >/dev/null
+	sbverify --cert "$KEYS/secureboot/MOK.crt" "$B/vmlinuz.signed" >/dev/null
+	KERNEL="$B/vmlinuz.signed"
+	cp "$B/shim/shimx64.efi" "$E/BOOTX64.EFI"
+	cp "$B/shim/mmx64.efi" "$E/mmx64.efi"
+	msg "  Secure Boot: shim + signed GRUB and kernel"
+else
+	[ -f "$B/shim/shimx64.efi" ] && echo "WARNING: $KEYS/secureboot/MOK.key missing: building without Secure Boot support"
+	for f in "$B"/efi-part/EFI/BOOT/*.efi; do
+		cp "$f" "$E/$(basename "$f" | tr a-z A-Z)"
+	done
+fi
+CERT=ENROLL_THIS_KEY_IN_MOK_MANAGER.cer
+
 iso_tree() { # dir with_packages
 	local D=$1
 	rm -rf "$D"; mkdir -p "$D/boot/grub" "$D/live" "$D/EFI/BOOT"
@@ -172,9 +221,8 @@ iso_tree() { # dir with_packages
 	sed -e "s/@VERSION@/$VERSION/g" -e "s/@SERIAL@/$SERIAL/g" "$BOARD/grub.cfg" > "$D/boot/grub/grub.cfg"
 	echo "MicroLinux $VERSION" > "$D/boot/grub/microlinux-live.id"
 	cp "$B/rootfs.squashfs" "$D/live/rootfs.sqfs"
-	for f in "$B"/efi-part/EFI/BOOT/*.efi; do
-		cp "$f" "$D/EFI/BOOT/$(basename "$f" | tr a-z A-Z)"
-	done
+	cp "$E"/* "$D/EFI/BOOT/"
+	[ -z "$SB" ] || cp "$BOARD/keys/MOK.cer" "$D/$CERT"
 	if [ -n "$HYBRID_MBR" ]; then
 		mkdir -p "$D/boot/grub/i386-pc"
 		cp "$B/grub-eltorito.img" "$D/boot/grub/i386-pc/eltorito.img"
@@ -186,9 +234,10 @@ iso_tree() { # dir with_packages
 rm -f "$B/efiboot.img"
 mkfs.vfat -C -n MLEFI "$B/efiboot.img" 8192 >/dev/null
 mmd -i "$B/efiboot.img" ::/EFI ::/EFI/BOOT
-for f in "$B"/efi-part/EFI/BOOT/*.efi; do
-	mcopy -i "$B/efiboot.img" "$f" "::/EFI/BOOT/$(basename "$f" | tr a-z A-Z)"
+for f in "$E"/*; do
+	mcopy -i "$B/efiboot.img" "$f" "::/EFI/BOOT/$(basename "$f")"
 done
+[ -z "$SB" ] || mcopy -i "$B/efiboot.img" "$BOARD/keys/MOK.cer" "::/$CERT"
 
 mkiso() { # out dir
 	local bios=()
@@ -207,6 +256,16 @@ iso_tree "$B/iso-full" yes
 mkiso "$B/microlinux-$ARCH.iso" "$B/iso-full"
 iso_tree "$B/iso-base" no
 mkiso "$B/microlinux-$ARCH-base.iso" "$B/iso-base"
+
+# checksums of the images, signed with the GPG release key
+( cd "$B" && sha256sum "microlinux-$ARCH.iso" "microlinux-$ARCH-base.iso" > "SHA256SUMS-$ARCH" )
+rm -f "$B/SHA256SUMS-$ARCH.asc"
+if [ -d "$KEYS/gpg" ]; then
+	GNUPGHOME="$KEYS/gpg" gpg --batch --quiet --armor --detach-sign --output "$B/SHA256SUMS-$ARCH.asc" "$B/SHA256SUMS-$ARCH"
+	msg "  SHA256SUMS-$ARCH signed"
+else
+	echo "WARNING: $KEYS/gpg missing: SHA256SUMS-$ARCH not signed"
+fi
 
 # --- 4. size report -----------------------------------------------------------------
 mib() { echo "$(( ($(stat -c %s "$1") + 524287) / 1048576 )) MiB"; }

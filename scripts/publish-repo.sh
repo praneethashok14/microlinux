@@ -53,11 +53,14 @@ for A in $ARCHES; do
 		gh release upload "$TAG" "$D/$f"
 		n=$((n + 1))
 	done
-	[ -f "$D/SOURCES.txt" ] && gh release upload "$TAG" "$D/SOURCES.txt" --clobber
+	[ -f "$D/INDEX.sig" ] || { echo "$D/INDEX.sig missing: refusing to publish an unsigned repository"; exit 1; }
+	for f in SOURCES.txt CATEGORIES INDEX.sig; do
+		[ -f "$D/$f" ] && gh release upload "$TAG" "$D/$f" --clobber
+	done
 	gh release upload "$TAG" "$D/INDEX" --clobber
 	# assets that the new INDEX no longer names
 	for f in $have; do
-		case "$f" in INDEX|SOURCES.txt) continue ;; esac
+		case "$f" in INDEX|INDEX.sig|SOURCES.txt|CATEGORIES) continue ;; esac
 		cut -d'|' -f3 "$D/INDEX" | grep -qxF "$f" || gh release delete-asset "$TAG" "$f" -y
 	done
 	echo "$A: $(grep -c . "$D/INDEX") packages ($n uploaded) -> https://github.com/$GH_REPO/releases/tag/$TAG"

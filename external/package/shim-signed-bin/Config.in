@@ -1,0 +1,9 @@
+config BR2_PACKAGE_SHIM_SIGNED_BIN
+	bool "shim-signed-bin (Microsoft-signed shim from Debian, for Secure Boot)"
+	depends on BR2_x86_64
+	help
+	  The shim boot loader signed by Microsoft's UEFI CA (Debian's
+	  shim-signed) and Debian's signed MOK Manager. With them the
+	  MicroLinux GRUB and kernel, signed with the MicroLinux key, boot
+	  with Secure Boot enabled once that key has been enrolled with MOK
+	  Manager. The files are installed to images/shim/ for post-image.sh.

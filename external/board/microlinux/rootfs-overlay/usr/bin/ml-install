@@ -94,7 +94,9 @@ done
 
 echo "==> installing boot loader and kernel"
 mkdir -p $T/boot/efi/EFI/BOOT $T/boot/efi/boot/grub
-cp /live/medium/EFI/BOOT/BOOT*.EFI $T/boot/efi/EFI/BOOT/
+# the UEFI loader set: GRUB, or with Secure Boot shim + signed GRUB + MOK Manager
+cp /live/medium/EFI/BOOT/* $T/boot/efi/EFI/BOOT/
+cp /live/medium/ENROLL_THIS_KEY_IN_MOK_MANAGER.cer $T/boot/efi/ 2>/dev/null || true
 cp /live/medium/boot/vmlinuz /live/medium/boot/initramfs.cpio.gz $T/boot/efi/boot/
 cat > $T/boot/efi/boot/grub/grub.cfg <<G
 set default=0

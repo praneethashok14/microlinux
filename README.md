@@ -46,8 +46,10 @@ The package repository is written to `../microlinux-repo/<arch>/` and published
 with `./scripts/publish-repo.sh`.
 
 On a real PC: write the x86_64 ISO to a USB stick
-(`sudo dd if=out/microlinux-x86_64.iso of=/dev/rdiskN bs=4m` on macOS), turn
-off Secure Boot (the boot loader isn't signed), and boot from the stick.
+(`sudo dd if=out/microlinux-x86_64.iso of=/dev/rdiskN bs=4m` on macOS) and boot
+from it. **Secure Boot can stay on**: the first time, enroll the MicroLinux key
+in the blue MOK Manager screen (see [docs/SECUREBOOT.md](docs/SECUREBOOT.md)).
+The ISO checksums are GPG-signed (`out/SHA256SUMS-<arch>.asc`).
 
 ## Documentation
 
@@ -55,6 +57,7 @@ off Secure Boot (the boot loader isn't signed), and boot from the stick.
 - [docs/BUILD.md](docs/BUILD.md): build environment, reproducibility, layout
 - [docs/USAGE.md](docs/USAGE.md): using the system (network, Wi-Fi, Bluetooth, packages, install)
 - [docs/EL7-COMPAT.md](docs/EL7-COMPAT.md): EL7 compatibility layer and how to test your binaries
+- [docs/SECUREBOOT.md](docs/SECUREBOOT.md): Secure Boot, signed packages, verifying downloads, keys
 - [docs/TESTING.md](docs/TESTING.md): test suite and latest results
 - [docs/LICENSES.md](docs/LICENSES.md): licensing of bundled components
 
