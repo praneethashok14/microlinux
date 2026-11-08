@@ -61,6 +61,11 @@ mkdir -p "$T/home/user/Downloads" "$T/home/user/Desktop" "$T/root"
 cp -a "$T/home/user/." "$T/etc/skel/" 2>/dev/null || true
 rm -rf "$T/etc/skel/Downloads/"* "$T/etc/skel/Desktop/"*
 
+# JWM draws the desktop, so PCManFM's desktop manager never runs and its
+# "Desktop Preferences" only says "Desktop manager is not active": hide it
+f="$T/usr/share/applications/pcmanfm-desktop-pref.desktop"
+[ -f "$f" ] && ! grep -q '^NoDisplay=true' "$f" && echo 'NoDisplay=true' >> "$f"
+
 # GTK / desktop caches that would otherwise be generated at every boot
 if [ -x "$HOST_DIR/bin/gtk-update-icon-cache" ]; then
 	for d in "$T"/usr/share/icons/*/; do
