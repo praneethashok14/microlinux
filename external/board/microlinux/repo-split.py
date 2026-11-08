@@ -66,7 +66,10 @@ def closure(roots):
 
 
 # packages named in a config fragment (sub-options are ignored)
-sym = {"BR2_PACKAGE_" + n.upper().replace("-", "_"): n for n in target}
+# Only symbols that exist: the kernel (BR2_LINUX_KERNEL), GRUB, the toolchain,
+# udev and virtual providers have no BR2_PACKAGE_<NAME> and so are always base.
+real = set(re.findall(r"^(?:# )?(BR2_PACKAGE_\w+)[= ]", open(os.environ["BR2_CONFIG"]).read(), re.M))
+sym = {k: n for n in target for k in ["BR2_PACKAGE_" + n.upper().replace("-", "_")] if k in real}
 
 
 def named_in(fragment):

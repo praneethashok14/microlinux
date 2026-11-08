@@ -125,6 +125,11 @@ done < "$P/INDEX"
 cp "$B/repo-root/SOURCES.txt" "$R/SOURCES.txt"
 msg "  $(grep -c . "$R/INDEX") packages, $(du -sm "$R" | cut -f1) MiB"
 
+# the base system must keep what it boots with (repo-split.py must never move these)
+for f in usr/lib/modules usr/bin/busybox usr/sbin/mkfs.ext4 etc/inittab; do
+	[ -e "$T/$f" ] || { echo "base system is missing /$f"; exit 1; }
+done
+
 # rootfs-wide check: every ELF's libraries resolve inside the rootfs
 msg "checking root filesystem library dependencies"
 missing=0
