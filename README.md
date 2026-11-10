@@ -22,6 +22,18 @@ A tiny, fully functional Linux distribution for **x86_64** and **aarch64**
 - **Installer**: `ml-install` writes a GPT disk with an ESP and an ext4 root
   (x86_64: also bootable from BIOS).
 
+## Download
+
+Ready-made ISOs are on the [releases page](https://github.com/praneethashok14/microlinux/releases/latest):
+
+| | Full (base + Firefox + EL7 runtime) | Base only |
+|---|---|---|
+| PCs (x86_64) | [microlinux-x86_64.iso](https://github.com/praneethashok14/microlinux/releases/latest/download/microlinux-x86_64.iso) | [microlinux-x86_64-base.iso](https://github.com/praneethashok14/microlinux/releases/latest/download/microlinux-x86_64-base.iso) |
+| ARM (aarch64) | [microlinux-aarch64.iso](https://github.com/praneethashok14/microlinux/releases/latest/download/microlinux-aarch64.iso) | [microlinux-aarch64-base.iso](https://github.com/praneethashok14/microlinux/releases/latest/download/microlinux-aarch64-base.iso) |
+
+Checksums: `SHA256SUMS-<arch>` (GPG-signed, `.asc`) on the same page. Logins
+on the live system: `user` / `live`, `root` / `microlinux`.
+
 ## Quick start (macOS)
 
 ```sh

@@ -3,6 +3,8 @@
 __pycache__/
 build-disk.img
 /keys/
-out/
 tests/.run/
 tests/results/
+out/*.iso
+out/*.fd
+out/size-report.txt
