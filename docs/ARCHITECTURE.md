@@ -9,7 +9,7 @@
 | Two architectures from one tree | **aarch64 and x86_64** are built from the same Buildroot external tree: one shared config fragment plus a short one per architecture (CPU, kernel image, firmware, boot loader). Everything above the kernel (packages, desktop, tools, EL7 layer, tests) is identical. |
 | Boot on arbitrary hardware | arm64: **UEFI + GRUB 2 (arm64-efi)**, a kernel from the arm64 `defconfig` with unused SoC families removed, **EFI zboot** image. arm64 has no BIOS; UEFI (native, or U-Boot's EFI layer) is the common denominator. x86_64: **GRUB 2 for BIOS (i386-pc) and UEFI (x86_64-efi)** on one hybrid image, kernel from `x86_64_defconfig` + PC/laptop/VM drivers, `bzImage`. |
 | Small ISO, fast boot | Root filesystem is **SquashFS (xz)**, mounted read-only with an **overlayfs** on tmpfs for writes. Large optional software (Firefox, EL7 runtime) lives in separate **SquashFS packages** that are mounted, never unpacked. |
-| Small RAM footprint | BusyBox init (no service manager daemons), eudev, JWM (a single ~200 KB process for WM + panel + menus), xterm. No compositor, no desktop environment. |
+| Small RAM footprint | BusyBox init (no service manager daemons), eudev, LXQt (the lightest Qt desktop environment) with Openbox. No compositor. |
 
 ## Boot flow
 
@@ -31,7 +31,7 @@ UEFI firmware                                    BIOS (x86_64 only)
                              rcS → S01 syslogd, S02 klogd, S10 udev (eudev, module autoload),
                                    S12 mlpkg (mount packages), S30 dbus, S40 network (DHCP),
                                    S40 bluetoothd, S45 ntp
-                             tty1: autologin → bash → startx → JWM
+                             tty1: autologin → bash → startx → startlxqt (Openbox)
                              tty2-3: getty, serial: getty on ttyAMA0/ttyS0
 ```
 
@@ -63,7 +63,7 @@ plus standard `root=`, `rootfstype=`, `rootflags=`, `nomodeset`, `quiet`, `logle
 | Bluetooth | BlueZ 5 (bluetoothd, bluetoothctl, HID/HoG) |
 | Hardware info | pciutils, usbutils, dmidecode, lscpu, `ml-hwinfo` |
 | Graphics | Xorg (modesetting, fbdev fallback, libinput), Mesa softpipe (GL for GTK/Firefox) |
-| Desktop | JWM, xterm, PCManFM (GTK 3), Adwaita icons, DejaVu + Liberation fonts |
+| Desktop | LXQt 2.4 (Qt 6.9, KDE Frameworks 6.30 libraries), Openbox, PCManFM-Qt, QTerminal, xterm, GTK 3 (Firefox, Settings), Adwaita icons, DejaVu + Liberation fonts |
 | Browser | Firefox ESR 153 official Mozilla build for the architecture (package `firefox`) |
 | EL7 | libxcrypt-compat (`libcrypt.so.1`), ncurses ABI 5, `libbz2.so.1`, package `el7-runtime`, `elfcheck`, `el7-run`, `el7-chroot` |
 | Packaging | `mlpkg` |
@@ -73,8 +73,10 @@ plus standard `root=`, `rootfstype=`, `rootflags=`, `nomodeset`, `quiet`, `logle
 - **Buildroot over Alpine/Debian/Yocto.** Alpine is musl, so EL7 binaries would not run. Debian
   netinst-based minimal images are 300 MB+ and would mean "installing another distribution".
   Yocto is heavier to maintain. Buildroot produces exactly the files we choose.
-- **JWM over Openbox+tint2 or LXQt.** One small process does the WM, panel, task list,
-  tray, clock and root menu, and the configuration is a single XML file.
+- **LXQt over JWM, Xfce or KDE Plasma.** Earlier releases used JWM (one ~200 KB
+  process). LXQt gives a complete desktop (panel, menu, file manager, settings,
+  power management) while staying light, needs no logind or systemd, and its Qt 6
+  libraries are shared by its parts. Openbox is its usual window manager under X11.
 - **Xorg over Wayland.** Without GPU drivers, a Wayland compositor would do software
   compositing for every frame. Xorg with the modesetting driver's shadow
   framebuffer is lighter, and every program here supports X11.

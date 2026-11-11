@@ -1,0 +1,30 @@
+From: MicroLinux
+Subject: [PATCH] allow setting the Qt plugin directory
+
+When cross compiling, qtpaths is the build machine's and reports its own
+plugin directory. Let the build pass QT_PLUGINS_DIR instead.
+
+Upstream: not submitted
+Signed-off-by: MicroLinux
+---
+--- a/src/CMakeLists.txt	2026-11-11 09:12:03
++++ b/src/CMakeLists.txt	2026-11-11 09:12:03
+@@ -42,12 +42,14 @@
+         Qt6XdgIconLoader
+ )
+ 
+-lxqt_query_qt(_QT_PLUGINS_DIR QT_INSTALL_PLUGINS)
++if (NOT DEFINED QT_PLUGINS_DIR)
++    lxqt_query_qt(_QT_PLUGINS_DIR QT_INSTALL_PLUGINS)
+ 
+-if (NOT _QT_PLUGINS_DIR)
+-    message(FATAL_ERROR "Qt6 plugin directory cannot be detected.")
++    if (NOT _QT_PLUGINS_DIR)
++        message(FATAL_ERROR "Qt6 plugin directory cannot be detected.")
++    endif()
++    set(QT_PLUGINS_DIR "${_QT_PLUGINS_DIR}")
+ endif()
+-set(QT_PLUGINS_DIR "${_QT_PLUGINS_DIR}")
+ message(STATUS "Qt6 plugin directory:" "${QT_PLUGINS_DIR}")
+ 
+ install(TARGETS qtlxqt LIBRARY DESTINATION "${QT_PLUGINS_DIR}/platformthemes")

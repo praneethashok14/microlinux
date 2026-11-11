@@ -135,4 +135,6 @@ CONFIG_HW_RANDOM_VIRTIO=y
 CONFIG_SND=m
 CONFIG_SND_VIRTIO=m
 CONFIG_SND_HDA_INTEL=m
+# generic HD-audio codec: QEMU/UTM's emulated HDA card (x86 gets it through the Realtek codecs)
+CONFIG_SND_HDA_GENERIC=m
 CONFIG_SND_USB_AUDIO=m

@@ -1,0 +1,13 @@
+config BR2_PACKAGE_LXQT_GLOBALKEYS
+	bool "lxqt-globalkeys"
+	select BR2_PACKAGE_LIBLXQT
+	select BR2_PACKAGE_QT6
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_WIDGETS
+	select BR2_PACKAGE_QT6BASE_DBUS
+	select BR2_PACKAGE_HOST_QT6TOOLS
+	select BR2_PACKAGE_HOST_QT6TOOLS_LINGUIST_TOOLS
+	help
+	  LXQt global keyboard shortcuts daemon and library.
+
+	  https://github.com/lxqt/lxqt-globalkeys

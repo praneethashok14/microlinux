@@ -1,0 +1,12 @@
+config BR2_PACKAGE_PRISMLAUNCHER_BIN
+	bool "prismlauncher-bin (Minecraft launcher, for the package repository)"
+	depends on BR2_aarch64 || BR2_x86_64
+	depends on BR2_PACKAGE_TEMURIN_JRE_BIN
+	help
+	  Prism Launcher, an open-source Minecraft launcher (instances,
+	  mods, modpacks, Microsoft accounts), self-contained portable
+	  build. Not put on the ISO: published in the package repository
+	  as the image package "prismlauncher" (mounted at
+	  /opt/prismlauncher), which depends on openjdk-25-jre.
+
+	  https://prismlauncher.org/

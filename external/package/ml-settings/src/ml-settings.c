@@ -129,7 +129,7 @@ static void run(const char *const *argv, gboolean as_root, const char *input, Do
 /* open a terminal window running CMD (for interactive tools) */
 static void run_in_terminal(const char *title, const char *cmd)
 {
-	const char *argv[] = {"xterm", "-T", title, "-geometry", "110x32", "-e", "sh", "-c", cmd, NULL};
+	const char *argv[] = {"qterminal", "-e", "sh", "-c", cmd, NULL};
 	g_spawn_async(NULL, (char **)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
 }
 
@@ -797,44 +797,60 @@ static GtkWidget *page_sound(void)
 
 static GtkWidget *bg_default, *bg_solid, *bg_picture, *bg_color, *bg_file, *dark_switch;
 
-static void jwm_restarted(gboolean ok, const char *output, gpointer data)
+/* the wallpaper is drawn by PCManFM-Qt (LXQt desktop): pcmanfm-qt passes the
+   change to the running desktop */
+static void set_wallpaper(const char *file, const char *mode)
 {
-	set_status(ok ? "Wallpaper changed." : "Could not restart the desktop.");
+	char *arg = g_strdup_printf("--set-wallpaper=%s", file);
+	char *m = g_strdup_printf("--wallpaper-mode=%s", mode);
+	const char *argv[] = {"pcmanfm-qt", "--profile=lxqt", arg, m, NULL};
+	GError *e = NULL;
+	if (g_spawn_async(NULL, (char **)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, &e)) {
+		set_status("Wallpaper changed.");
+	} else {
+		set_status("Could not change the wallpaper: %s", e->message);
+		g_error_free(e);
+	}
+	g_free(arg);
+	g_free(m);
 }
 
 static void bg_apply(GtkButton *b, gpointer d)
 {
-	char *path = config_path("jwm.xml");
-	GString *x = g_string_new("<?xml version=\"1.0\"?>\n<!-- written by ml-settings -->\n<JWM>\n");
 	if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(bg_solid))) {
+		/* a solid colour is a one-colour picture */
 		GdkRGBA c;
 		gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(bg_color), &c);
-		g_string_append_printf(x, "  <Desktops><Background type=\"solid\">#%02x%02x%02x</Background></Desktops>\n",
-		                       (int)(c.red * 255 + 0.5), (int)(c.green * 255 + 0.5), (int)(c.blue * 255 + 0.5));
+		GdkPixbuf *pb = gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, 16, 16);
+		gdk_pixbuf_fill(pb, ((guint32)(c.red * 255 + 0.5) << 24) | ((guint32)(c.green * 255 + 0.5) << 16) |
+		                    ((guint32)(c.blue * 255 + 0.5) << 8) | 0xff);
+		char *path = config_path("wallpaper-colour.png");
+		GError *e = NULL;
+		if (gdk_pixbuf_save(pb, path, "png", &e, NULL)) {
+			set_wallpaper(path, "stretch");
+		} else {
+			set_status("Could not save: %s", e->message);
+			g_error_free(e);
+		}
+		g_free(path);
+		g_object_unref(pb);
 	} else if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(bg_picture))) {
 		char *f = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(bg_file));
 		if (!f) {
 			set_status("Choose a picture first.");
-			g_string_free(x, TRUE);
-			g_free(path);
 			return;
 		}
-		char *esc = g_markup_escape_text(f, -1);
-		g_string_append_printf(x, "  <Desktops><Background type=\"image\">%s</Background></Desktops>\n", esc);
-		g_free(esc);
+		set_wallpaper(f, "zoom");
 		g_free(f);
-	}
-	g_string_append(x, "</JWM>\n");
-	GError *e = NULL;
-	if (!g_file_set_contents(path, x->str, -1, &e)) {
-		set_status("Could not save: %s", e->message);
-		g_error_free(e);
 	} else {
-		const char *argv[] = {"jwm", "-restart", NULL};
-		run(argv, FALSE, NULL, jwm_restarted, NULL);
+		set_wallpaper("/usr/share/microlinux/wallpaper.png", "stretch");
 	}
-	g_string_free(x, TRUE);
-	g_free(path);
+}
+
+static void appearance_more(GtkButton *b, gpointer d)
+{
+	const char *argv[] = {"lxqt-config-appearance", NULL};
+	g_spawn_async(NULL, (char **)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
 }
 
 /* dark mode: GTK applications started from now on (and this window) */
@@ -891,7 +907,8 @@ static GtkWidget *page_appearance(void)
 	g_object_get(gtk_settings_get_default(), "gtk-application-prefer-dark-theme", &dark, NULL);
 	gtk_switch_set_active(GTK_SWITCH(dark_switch), dark);
 	g_signal_connect(dark_switch, "state-set", G_CALLBACK(dark_set), NULL);
-	row(s, "Dark mode for applications", dark_switch);
+	row(s, "Dark mode for GTK applications", dark_switch);
+	add_button(button_row(s), "_Desktop theme, icons and fonts...", G_CALLBACK(appearance_more), NULL);
 	return page;
 }
 

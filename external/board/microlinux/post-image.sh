@@ -128,7 +128,8 @@ while IFS='|' read -r name ver f sha size desc; do
 done < "$P/INDEX"
 # image packages for the repository only (pkgroot-repo/*, e.g. Chromium): mounted
 # under /opt like Firefox; "builddeps=" names Buildroot packages, which become
-# the repository packages they depend on (plus those packages' dependencies)
+# the repository packages they depend on (plus those packages' dependencies);
+# "pkgdeps=" names other repository image packages (e.g. Prism -> Java)
 for d in "$B"/pkgroot-repo/*/; do
 	[ -f "$d/.mlpkg/info" ] || continue
 	inf="$d/.mlpkg/info"
@@ -139,11 +140,12 @@ for d in "$B"/pkgroot-repo/*/; do
 		[ -f "$B/repo-root/$b/.mlpkg/info" ] || continue   # in the base system
 		dep="$dep $b $(sed -n 's/^depends=//p' "$B/repo-root/$b/.mlpkg/info")"
 	done
+	dep="$dep $(sed -n 's/^pkgdeps=//p' "$inf")"
 	dep=$(echo $dep | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ *$//')
 	# (builddeps= stays: this step must give the same result every time it runs)
 	sed -i '/^depends=/d' "$inf"; echo "depends=$dep" >> "$inf"
 	libs=$( { find "$d" -name '*.so*' -printf '%f\n'
-		for n in $dep; do find "$B/repo-root/$n" -name '*.so*' -printf '%f\n'; done; } | sort -u)
+		for n in $dep; do if [ -d "$B/repo-root/$n" ]; then find "$B/repo-root/$n" -name '*.so*' -printf '%f\n'; fi; done; } | sort -u)
 	while IFS= read -r f; do
 		for lib in $(needed "$f"); do
 			grep -qxF "$lib" <<< "$libs" && continue

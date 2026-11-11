@@ -1,0 +1,36 @@
+From: MicroLinux
+Subject: [PATCH] build without the QML module and the test program
+
+The QML plugin is only used by Plasma, and the test program needs QML too;
+LXQt links the C++ library. Leaving them out avoids building Qt Quick
+(qt6declarative).
+
+Upstream: not applicable (MicroLinux specific)
+Signed-off-by: MicroLinux
+---
+--- a/CMakeLists.txt	2026-11-11 09:14:31
++++ b/CMakeLists.txt	2026-11-11 09:14:31
+@@ -33,7 +33,7 @@
+ include(ECMQmlModule)
+ include(KDEGitCommitHooks)
+ 
+-find_package(Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED COMPONENTS WaylandClient Qml)
++find_package(Qt6 ${QT_MIN_VERSION} CONFIG REQUIRED COMPONENTS WaylandClient)
+ 
+ if (Qt6WaylandClient_VERSION VERSION_GREATER_EQUAL "6.10.0")
+     find_package(Qt6WaylandClientPrivate ${REQUIRED_QT_VERSION} REQUIRED NO_MODULE)
+@@ -65,7 +65,6 @@
+ )
+ 
+ add_subdirectory(src)
+-add_subdirectory(tests)
+ 
+ set(CMAKECONFIG_INSTALL_DIR ${KDE_INSTALL_CMAKEPACKAGEDIR}/LayerShellQt)
+ install(EXPORT LayerShellQtTargets
+--- a/src/CMakeLists.txt	2026-11-11 09:14:31
++++ b/src/CMakeLists.txt	2026-11-11 09:14:31
+@@ -81,4 +81,3 @@
+     DESTINATION ${KDE_INSTALL_INCLUDEDIR}/LayerShellQt COMPONENT Devel
+ )
+ 
+-add_subdirectory(declarative)

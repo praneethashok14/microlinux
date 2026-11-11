@@ -1,0 +1,13 @@
+config BR2_PACKAGE_LXQT_MENU_DATA
+	bool "lxqt-menu-data"
+	select BR2_PACKAGE_LXQT_BUILD_TOOLS
+	select BR2_PACKAGE_QT6
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_WIDGETS
+	select BR2_PACKAGE_QT6BASE_DBUS
+	select BR2_PACKAGE_HOST_QT6TOOLS
+	select BR2_PACKAGE_HOST_QT6TOOLS_LINGUIST_TOOLS
+	help
+	  LXQt menu data: the freedesktop.org application menu files.
+
+	  https://github.com/lxqt/lxqt-menu-data

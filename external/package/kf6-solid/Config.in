@@ -1,0 +1,16 @@
+config BR2_PACKAGE_KF6_SOLID
+	bool "kf6-solid"
+	select BR2_PACKAGE_KF6_EXTRA_CMAKE_MODULES
+	select BR2_PACKAGE_HOST_QT6TOOLS
+	select BR2_PACKAGE_HOST_QT6TOOLS_LINGUIST_TOOLS
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_DBUS
+	select BR2_PACKAGE_QT6BASE_NETWORK
+	select BR2_PACKAGE_QT6BASE_XML
+	select BR2_PACKAGE_UTIL_LINUX
+	select BR2_PACKAGE_UTIL_LINUX_LIBMOUNT
+	help
+	  Solid (KDE Frameworks 6): hardware discovery (disks, batteries,
+	  removable media) through udev, UDisks2 and UPower.
+
+	  https://invent.kde.org/frameworks/solid

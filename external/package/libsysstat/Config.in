@@ -1,0 +1,13 @@
+config BR2_PACKAGE_LIBSYSSTAT
+	bool "libsysstat"
+	select BR2_PACKAGE_LXQT_BUILD_TOOLS
+	select BR2_PACKAGE_QT6
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_WIDGETS
+	select BR2_PACKAGE_QT6BASE_DBUS
+	select BR2_PACKAGE_HOST_QT6TOOLS
+	select BR2_PACKAGE_HOST_QT6TOOLS_LINGUIST_TOOLS
+	help
+	  libsysstat: system statistics (CPU, memory, network) for Qt.
+
+	  https://github.com/lxqt/libsysstat

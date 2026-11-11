@@ -1,0 +1,18 @@
+config BR2_PACKAGE_LXQT_RUNNER
+	bool "lxqt-runner"
+	select BR2_PACKAGE_LIBLXQT
+	select BR2_PACKAGE_LXQT_GLOBALKEYS
+	select BR2_PACKAGE_KF6_KWINDOWSYSTEM
+	select BR2_PACKAGE_LAYER_SHELL_QT
+	select BR2_PACKAGE_MUPARSER
+	select BR2_PACKAGE_QT6BASE_XML
+	select BR2_PACKAGE_QT6
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_WIDGETS
+	select BR2_PACKAGE_QT6BASE_DBUS
+	select BR2_PACKAGE_HOST_QT6TOOLS
+	select BR2_PACKAGE_HOST_QT6TOOLS_LINGUIST_TOOLS
+	help
+	  LXQt runner: quick launcher and calculator (Alt+F2).
+
+	  https://github.com/lxqt/lxqt-runner

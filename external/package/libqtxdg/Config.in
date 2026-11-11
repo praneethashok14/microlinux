@@ -1,0 +1,17 @@
+config BR2_PACKAGE_LIBQTXDG
+	bool "libqtxdg"
+	select BR2_PACKAGE_LXQT_BUILD_TOOLS
+	select BR2_PACKAGE_QT6
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_WIDGETS
+	select BR2_PACKAGE_QT6BASE_DBUS
+	select BR2_PACKAGE_HOST_QT6TOOLS
+	select BR2_PACKAGE_HOST_QT6TOOLS_LINGUIST_TOOLS
+	select BR2_PACKAGE_QT6BASE_XML
+	select BR2_PACKAGE_QT6SVG
+	select BR2_PACKAGE_LIBGLIB2
+	help
+	  libqtxdg: Qt implementation of the freedesktop.org XDG
+	  specifications (desktop entries, menus, icon themes, MIME).
+
+	  https://github.com/lxqt/libqtxdg

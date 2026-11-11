@@ -1,0 +1,11 @@
+config BR2_PACKAGE_POLKIT_QT6
+	bool "polkit-qt6"
+	select BR2_PACKAGE_POLKIT
+	select BR2_PACKAGE_QT6BASE_DBUS
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_WIDGETS
+	help
+	  Polkit-Qt: Qt 6 bindings for the polkit authorization
+	  library.
+
+	  https://invent.kde.org/libraries/polkit-qt-1

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Install MicroLinux to disk
+Comment=Install MicroLinux on a disk, alone or next to Windows
+Icon=drive-harddisk
+Exec=sh -c "sudo ml-install; echo; printf 'Press Enter to close'; read x"
+Terminal=true
+Categories=System;

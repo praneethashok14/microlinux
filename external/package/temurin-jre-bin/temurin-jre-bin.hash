@@ -1,0 +1,9 @@
+# from api.adoptium.net (eclipse temurin JRE, linux)
+sha256  6fac98f0c8202efc3135a9e9e42aa61963ec42d1c5cbb40caf231e7b14a24ef6  OpenJDK25U-jre_x64_linux_hotspot_25.0.5_8.tar.gz
+sha256  963931723891302ebb2687178532c3d793d71e2577cd058061c7efb396140a86  OpenJDK25U-jre_aarch64_linux_hotspot_25.0.5_8.tar.gz
+sha256  a535a1df9c6284d9618872984e026ae0352d1f7e9e0605425c0e6114f47351dd  OpenJDK21U-jre_x64_linux_hotspot_21.0.13_9.tar.gz
+sha256  b1734db7ade49c3f6acc6ae06233b8c2dd90e3e2f00f67000ae1c972aaa64d8c  OpenJDK21U-jre_aarch64_linux_hotspot_21.0.13_9.tar.gz
+sha256  9f41bf88c7900c7097444a1bdeb84146ae692bc08842490ab098063c74bf9a8a  OpenJDK17U-jre_x64_linux_hotspot_17.0.21_9.tar.gz
+sha256  1114f09d6174f54270c3117410b5e4022b43ebc0b43b751af08b927c55ed7bb5  OpenJDK17U-jre_aarch64_linux_hotspot_17.0.21_9.tar.gz
+sha256  57468dc8bfd71dd0578d9717e63a8c13b9efe0a2f2c85c2a13966d1c0f9b1e5f  OpenJDK8U-jre_x64_linux_hotspot_8u512b09.tar.gz
+sha256  9b45f49bc6e54cf9170aebe0ee45f48a833222325cb3b2d6d21220eee4c5207b  OpenJDK8U-jre_aarch64_linux_hotspot_8u512b09.tar.gz

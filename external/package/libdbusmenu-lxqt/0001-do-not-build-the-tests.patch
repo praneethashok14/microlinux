@@ -1,0 +1,18 @@
+From: MicroLinux
+Subject: [PATCH] do not build the tests
+
+The tests need Qt Test and are not installed.
+
+Upstream: not submitted
+Signed-off-by: MicroLinux
+---
+--- a/CMakeLists.txt	2026-11-11 09:14:31
++++ b/CMakeLists.txt	2026-11-11 09:14:31
+@@ -68,7 +68,6 @@
+     )
+ 
+ add_subdirectory(src)
+-add_subdirectory(tests)
+ add_subdirectory(tools)
+ 
+ if(WITH_DOC)

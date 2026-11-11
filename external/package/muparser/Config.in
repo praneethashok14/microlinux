@@ -1,0 +1,8 @@
+config BR2_PACKAGE_MUPARSER
+	bool "muparser"
+	depends on BR2_INSTALL_LIBSTDCPP
+	help
+	  muparser: a fast math expression parser library (used by the
+	  LXQt runner as a calculator).
+
+	  https://beltoforion.de/en/muparser/

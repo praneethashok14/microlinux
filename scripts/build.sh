@@ -6,7 +6,7 @@
 #   ./scripts/build.sh --arch x86_64        build one: aarch64 | x86_64 | all
 #   ./scripts/build.sh --arch x86_64 <target>
 #                                           any Buildroot target, e.g. menuconfig,
-#                                           linux-rebuild, jwm-dirclean, savedefconfig
+#                                           linux-rebuild, lxqt-panel-dirclean, savedefconfig
 # Results: out/microlinux-<arch>.iso, out/microlinux-<arch>-base.iso,
 #          out/size-report-<arch>.txt, and the package repository in
 #          ../microlinux-repo/<arch>/ (REPO_DIR=... to change; publish with
@@ -36,6 +36,12 @@ BR=$W/buildroot
 # Buildroot cannot handle spaces in paths, so mirror the source tree onto the build disk.
 rsync -a --delete --exclude build-disk.img --exclude out --exclude tests/.run "$SRC/" "$W/src/"
 export BR2_DL_DIR=$W/dl
+# LLVM (Mesa's GPU drivers) needs 1-2 GB per C++ compile: swap on the build
+# disk so that parallel compiles don't run the 8 GB VM out of memory
+if ! swapon --show=NAME --noheadings | grep -q "$W/swapfile"; then
+	[ -f $W/swapfile ] || { sudo fallocate -l 6G $W/swapfile && sudo chmod 600 $W/swapfile && sudo mkswap -q $W/swapfile; }
+	sudo swapon $W/swapfile
+fi
 cd "$BR"
 for A in $ARCHES; do
 	# aarch64 keeps the original output directory, so existing builds stay incremental

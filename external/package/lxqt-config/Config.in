@@ -1,0 +1,23 @@
+config BR2_PACKAGE_LXQT_CONFIG
+	bool "lxqt-config"
+	select BR2_PACKAGE_LIBLXQT
+	select BR2_PACKAGE_LXQT_MENU_DATA
+	select BR2_PACKAGE_QT6SVG
+	select BR2_PACKAGE_LIBXCB
+	select BR2_PACKAGE_XLIB_LIBXCURSOR
+	select BR2_PACKAGE_XLIB_LIBXI
+	select BR2_PACKAGE_XLIB_LIBXFIXES
+	select BR2_PACKAGE_XDRIVER_XF86_INPUT_LIBINPUT
+	select BR2_PACKAGE_ZLIB
+	select BR2_PACKAGE_QT6BASE_XML
+	select BR2_PACKAGE_QT6
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_WIDGETS
+	select BR2_PACKAGE_QT6BASE_DBUS
+	select BR2_PACKAGE_HOST_QT6TOOLS
+	select BR2_PACKAGE_HOST_QT6TOOLS_LINGUIST_TOOLS
+	help
+	  LXQt configuration center: appearance, input, file
+	  associations, locale, brightness.
+
+	  https://github.com/lxqt/lxqt-config

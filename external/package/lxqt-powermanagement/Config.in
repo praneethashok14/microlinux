@@ -1,0 +1,19 @@
+config BR2_PACKAGE_LXQT_POWERMANAGEMENT
+	bool "lxqt-powermanagement"
+	select BR2_PACKAGE_LIBLXQT
+	select BR2_PACKAGE_LXQT_GLOBALKEYS
+	select BR2_PACKAGE_KF6_KIDLETIME
+	select BR2_PACKAGE_KF6_SOLID
+	select BR2_PACKAGE_QT6SVG
+	select BR2_PACKAGE_LIBXCB
+	select BR2_PACKAGE_UPOWER
+	select BR2_PACKAGE_QT6
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_WIDGETS
+	select BR2_PACKAGE_QT6BASE_DBUS
+	select BR2_PACKAGE_HOST_QT6TOOLS
+	select BR2_PACKAGE_HOST_QT6TOOLS_LINGUIST_TOOLS
+	help
+	  LXQt power management: battery, lid and idle actions.
+
+	  https://github.com/lxqt/lxqt-powermanagement

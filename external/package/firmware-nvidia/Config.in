@@ -1,0 +1,11 @@
+config BR2_PACKAGE_FIRMWARE_NVIDIA
+	bool "firmware-nvidia (for the package repository)"
+	depends on BR2_x86_64
+	help
+	  NVIDIA GPU firmware, including GeForce RTX 20/30/40/50 (GSP); reboot after installing.
+
+	  For the open-source nouveau driver: kernel 6.18 uses the GSP
+	  firmware 570.144 (the older 535 files and Tegra SoC firmware
+	  are left out). In the package repository, not on the ISO: the
+	  kernel only loads nouveau once this is installed
+	  (/etc/modprobe.d/gpu.conf).

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Hardware
+Comment=Detected hardware and the drivers in use
+Icon=computer
+Exec=sh -c "sudo ml-hwinfo | less -R"
+Terminal=true
+Categories=System;

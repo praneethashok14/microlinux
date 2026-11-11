@@ -1,0 +1,9 @@
+config BR2_PACKAGE_FIRMWARE_AMDGPU
+	bool "firmware-amdgpu (for the package repository)"
+	depends on BR2_x86_64
+	help
+	  AMD Radeon GPU firmware (amdgpu and older radeon cards); reboot after installing.
+
+	  In the package repository, not on the ISO: the kernel only
+	  loads amdgpu/radeon once this is installed
+	  (/etc/modprobe.d/gpu.conf).

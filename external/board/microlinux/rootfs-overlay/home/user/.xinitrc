@@ -1,5 +1,5 @@
 #!/bin/sh
-# MicroLinux X session
+# MicroLinux X session: LXQt with the Openbox window manager
 export XENVIRONMENT="$HOME/.Xresources"
 # keyboard layout: ml.keymap= on the kernel command line, else the one chosen in Settings
 kb=$(sed -n 's/.*ml\.keymap=\([a-z]*\).*/\1/p' /proc/cmdline)
@@ -7,5 +7,5 @@ kb=$(sed -n 's/.*ml\.keymap=\([a-z]*\).*/\1/p' /proc/cmdline)
 setxkbmap "${kb:-us}"
 xsetroot -cursor_name left_ptr
 ml-display auto
-if command -v dbus-run-session >/dev/null; then exec dbus-run-session jwm; fi
-exec jwm
+if command -v dbus-run-session >/dev/null; then exec dbus-run-session startlxqt; fi
+exec startlxqt

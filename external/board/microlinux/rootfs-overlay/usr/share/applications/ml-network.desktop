@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Network (terminal)
+Comment=Network status and Wi-Fi commands
+Icon=network-wired
+Exec=sh -c "netcfg status; echo; netcfg test; echo; echo 'Wi-Fi: sudo netcfg wifi-scan  /  sudo netcfg wifi SSID PASSWORD'; exec bash"
+Terminal=true
+Categories=System;

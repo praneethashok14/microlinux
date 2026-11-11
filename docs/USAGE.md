@@ -4,7 +4,7 @@
 
 | Entry | Use |
 |-------|-----|
-| live desktop | default; boots to the JWM desktop as `user` |
+| live desktop | default; boots to the LXQt desktop as `user` |
 | copy system to RAM | loads the system (and packages) into RAM; the medium can be removed |
 | safe graphics | `nomodeset`: firmware framebuffer only (try this if the screen stays black) |
 | text mode | no desktop (`ml.nox`); log in on tty1-3 or serial |
@@ -165,6 +165,19 @@ through the UEFI removable-media path (`EFI/BOOT/BOOTAA64.EFI` on arm64,
 `EFI/BOOT/BOOTX64.EFI` on x86_64), so no firmware boot entries are needed. On
 x86_64 it also adds a 1 MiB BIOS boot partition and installs GRUB for BIOS, so
 the same disk boots on BIOS and UEFI PCs.
+
+**Dual boot** (UEFI, GPT): `sudo ml-install --alongside DISK`, or answer "1"
+when `ml-install` finds partitions and free space on the disk. Make room first
+(Windows: Disk Management → Shrink Volume; turn off Fast Startup). It keeps
+every existing partition and puts the ext4 root into the largest free region
+(2 GiB or more). The boot loader goes to `EFI/microlinux/` on the existing EFI
+partition (shim + signed GRUB on x86_64, so Secure Boot keeps working), with
+GRUB's `grub.cfg` next to it and the kernel on the ext4 root. A firmware boot
+entry "MicroLinux" is added first in the boot order (efibootmgr). The GRUB menu
+shows MicroLinux (default, 5 s) and Windows (chainloads
+`\EFI\Microsoft\Boot\bootmgfw.efi`). See the
+[wiki](https://github.com/praneethashok14/microlinux/wiki/Installing#dual-boot-with-windows)
+for the Windows-side steps (BitLocker, AHCI, clock).
 
 ## System information and logs
 

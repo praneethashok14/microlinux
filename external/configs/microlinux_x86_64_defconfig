@@ -42,13 +42,27 @@ BR2_PACKAGE_LINUX_FIRMWARE_MEDIATEK_MT7922_BT=y
 BR2_PACKAGE_LINUX_FIRMWARE_RTL_87XX_BT=y
 BR2_PACKAGE_LINUX_FIRMWARE_RTL_88XX_BT=y
 
+# --- GPU drivers (hardware OpenGL, e.g. for games): Mesa with LLVM.
+#     Intel: iris (Gen8+/Broadwell and newer), crocus (Gen4-7); AMD Radeon:
+#     radeonsi (GCN and newer), r600 (HD 2000-6000); NVIDIA: nouveau (all,
+#     RTX through the GSP firmware); others: llvmpipe (fast software GL).
+#     GBM lets Xorg use glamor (DRI3). AMD/NVIDIA firmware: repository.
+BR2_PACKAGE_MESA3D_LLVM=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_IRIS=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_CROCUS=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_RADEONSI=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_R600=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_NOUVEAU=y
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_LLVMPIPE=y
+BR2_PACKAGE_MESA3D_GBM=y
+
 # --- Boot loader: GRUB 2 for BIOS (i386-pc) and UEFI (x86_64-efi); the GRUB
 #     tools on the target let ml-install set up BIOS boot on the installed disk
 BR2_TARGET_GRUB2_I386_PC=y
 BR2_TARGET_GRUB2_X86_64_EFI=y
 BR2_TARGET_GRUB2_BUILTIN_MODULES_PC="boot linux ext2 fat iso9660 part_msdos part_gpt biosdisk normal search search_fs_file search_fs_uuid search_label configfile echo test all_video vbe vga video_bochs video_cirrus gfxterm font gzio ls cat reboot halt sleep regexp minicmd"
 BR2_TARGET_GRUB2_BUILTIN_CONFIG_PC="$(BR2_EXTERNAL_MICROLINUX_PATH)/board/microlinux/grub-embed.cfg"
-BR2_TARGET_GRUB2_BUILTIN_MODULES_EFI="boot linux ext2 fat squash4 iso9660 part_msdos part_gpt normal efi_gop efi_uga search search_fs_file search_fs_uuid search_label configfile echo test all_video gfxterm font gzio loadenv ls cat reboot halt sleep regexp minicmd"
+BR2_TARGET_GRUB2_BUILTIN_MODULES_EFI="boot linux ext2 fat squash4 iso9660 part_msdos part_gpt normal efi_gop efi_uga search search_fs_file search_fs_uuid search_label configfile echo test all_video gfxterm font gzio loadenv ls cat reboot halt sleep regexp minicmd chain"
 BR2_TARGET_GRUB2_BUILTIN_CONFIG_EFI="$(BR2_EXTERNAL_MICROLINUX_PATH)/board/microlinux/grub-embed.cfg"
 BR2_TARGET_GRUB2_INSTALL_TOOLS=y
 
@@ -122,6 +136,8 @@ BR2_PACKAGE_DOSFSTOOLS_FATLABEL=y
 BR2_PACKAGE_DOSFSTOOLS_FSCK_FAT=y
 BR2_PACKAGE_DOSFSTOOLS_MKFS_FAT=y
 BR2_PACKAGE_PARTED=y
+# boot entries in the UEFI firmware (ml-install, dual boot)
+BR2_PACKAGE_EFIBOOTMGR=y
 BR2_PACKAGE_SQUASHFS=y
 BR2_PACKAGE_KMOD=y
 BR2_PACKAGE_KMOD_TOOLS=y
@@ -203,12 +219,37 @@ BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_SOFTPIPE=y
 BR2_PACKAGE_MESA3D_OPENGL_GLX=y
 BR2_PACKAGE_MESA3D_OPENGL_EGL=y
 
-# --- Desktop: JWM + xterm + PCManFM (GTK3, also used by Firefox)
-BR2_PACKAGE_JWM=y
+# --- Desktop: LXQt 2.4 (Qt 6) with the Openbox window manager. GTK3 stays:
+# Firefox and Settings (ml-settings) use it.
+BR2_PACKAGE_QT6=y
+BR2_PACKAGE_QT6BASE_GUI=y
+BR2_PACKAGE_QT6BASE_WIDGETS=y
+BR2_PACKAGE_QT6BASE_DBUS=y
+BR2_PACKAGE_QT6BASE_XCB=y
+BR2_PACKAGE_QT6BASE_DEFAULT_QPA="xcb"
+BR2_PACKAGE_QT6BASE_OPENGL=y
+BR2_PACKAGE_QT6BASE_OPENGL_DESKTOP=y
+BR2_PACKAGE_QT6BASE_FONTCONFIG=y
+BR2_PACKAGE_QT6BASE_HARFBUZZ=y
+BR2_PACKAGE_QT6BASE_PNG=y
+BR2_PACKAGE_QT6BASE_JPEG=y
+BR2_PACKAGE_QT6BASE_GIF=y
+BR2_PACKAGE_QT6SVG=y
+BR2_PACKAGE_OPENBOX=y
+BR2_PACKAGE_LXQT_SESSION=y
+BR2_PACKAGE_LXQT_PANEL=y
+BR2_PACKAGE_LXQT_RUNNER=y
+BR2_PACKAGE_LXQT_NOTIFICATIOND=y
+BR2_PACKAGE_LXQT_POWERMANAGEMENT=y
+BR2_PACKAGE_LXQT_CONFIG=y
+BR2_PACKAGE_LXQT_QTPLUGIN=y
+BR2_PACKAGE_LXQT_THEMES=y
+BR2_PACKAGE_LXQT_ABOUT=y
+BR2_PACKAGE_PCMANFM_QT=y
+BR2_PACKAGE_QTERMINAL=y
 BR2_PACKAGE_XTERM=y
 BR2_PACKAGE_LIBGTK3=y
 BR2_PACKAGE_LIBGTK3_X11=y
-BR2_PACKAGE_PCMANFM=y
 BR2_PACKAGE_ML_SETTINGS=y
 BR2_PACKAGE_ADWAITA_ICON_THEME=y
 BR2_PACKAGE_HICOLOR_ICON_THEME=y
@@ -386,6 +427,13 @@ BR2_PACKAGE_XAPP_XLOAD=y
 BR2_PACKAGE_GNUCHESS=y
 BR2_PACKAGE_LTRIS=y
 BR2_PACKAGE_LBREAKOUT2=y
+# Minecraft: Prism Launcher + Java runtimes 25/21/17/8 (image packages)
+BR2_PACKAGE_TEMURIN_JRE_BIN=y
+BR2_PACKAGE_PRISMLAUNCHER_BIN=y
 
 # --- MicroLinux tools  [category: System]
 BR2_PACKAGE_ML_SOFTWARE=y
+
+# --- GPU firmware (x86_64; the drivers are in the base system)  [category: System]
+BR2_PACKAGE_FIRMWARE_AMDGPU=y
+BR2_PACKAGE_FIRMWARE_NVIDIA=y

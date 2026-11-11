@@ -13,6 +13,17 @@ CONFIG_DRM_I915=m
 CONFIG_DRM_VMWGFX=m
 CONFIG_DRM_VBOXVIDEO=m
 CONFIG_DRM_CIRRUS_QEMU=m
+# AMD Radeon (GCN and newer: amdgpu; older: radeon) and NVIDIA (nouveau; RTX
+# cards through the GSP firmware). Their firmware is in the package
+# repository (firmware-amdgpu, firmware-nvidia); /etc/modprobe.d/gpu.conf
+# loads a driver only when its firmware is installed.
+CONFIG_DRM_AMDGPU=m
+CONFIG_DRM_AMDGPU_SI=y
+CONFIG_DRM_AMDGPU_CIK=y
+CONFIG_DRM_AMDGPU_USERPTR=y
+CONFIG_DRM_AMD_DC=y
+CONFIG_DRM_RADEON=m
+CONFIG_DRM_NOUVEAU=m
 
 # --- Storage: legacy IDE/SATA (QEMU pc, older PCs), SD card readers
 CONFIG_ATA_PIIX=y

@@ -1,0 +1,11 @@
+config BR2_PACKAGE_TEMURIN_JRE_BIN
+	bool "temurin-jre-bin (Java 25/21/17/8, for the package repository)"
+	depends on BR2_aarch64 || BR2_x86_64
+	depends on BR2_TOOLCHAIN_USES_GLIBC
+	help
+	  Eclipse Temurin Java runtimes (OpenJDK builds) 25, 21, 17 and 8.
+	  Not put on the ISO: published in the package repository as the
+	  image packages openjdk-<N>-jre, mounted at /opt/openjdk-<N>-jre
+	  (where Prism Launcher finds them).
+
+	  https://adoptium.net/

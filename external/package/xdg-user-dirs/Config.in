@@ -1,0 +1,7 @@
+config BR2_PACKAGE_XDG_USER_DIRS
+	bool "xdg-user-dirs"
+	help
+	  xdg-user-dirs: creates and looks up the user's well known
+	  folders (Desktop, Documents, Downloads, ...).
+
+	  https://www.freedesktop.org/wiki/Software/xdg-user-dirs/

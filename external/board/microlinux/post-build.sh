@@ -66,10 +66,35 @@ mkdir -p "$T/home/user/Downloads" "$T/home/user/Desktop" "$T/root"
 cp -a "$T/home/user/." "$T/etc/skel/" 2>/dev/null || true
 rm -rf "$T/etc/skel/Downloads/"* "$T/etc/skel/Desktop/"*
 
-# JWM draws the desktop, so PCManFM's desktop manager never runs and its
-# "Desktop Preferences" only says "Desktop manager is not active": hide it
-f="$T/usr/share/applications/pcmanfm-desktop-pref.desktop"
-[ -f "$f" ] && ! grep -q '^NoDisplay=true' "$f" && echo 'NoDisplay=true' >> "$f"
+# x86_64 Xorg has glamor: the modesetting driver uses GBM functions without
+# linking libgbm itself (glamor's module does), and with -z now it fails to
+# load ("undefined symbol: gbm_bo_get_offset", no screens). Load glamor first:
+# Xorg opens modules RTLD_GLOBAL, so libgbm is then there for modesetting.
+if [ -f "$T/usr/lib/xorg/modules/libglamoregl.so" ]; then
+	cat > "$T/etc/X11/xorg.conf.d/05-glamor.conf" <<'EOX'
+# written by post-build.sh: load glamor (and libgbm) before modesetting
+Section "Module"
+	Load "glamoregl"
+EndSection
+EOX
+fi
+
+# LXQt: the image has English only, drop the other translations (several MiB)
+find "$T/usr/share/lxqt/translations" "$T/usr/share/qtermwidget6/translations" \
+	"$T/usr/share/qterminal/translations" "$T/usr/share/pcmanfm-qt/translations" \
+	"$T/usr/share/libfm-qt/translations" -name '*.qm' -delete 2>/dev/null || true
+
+# default wallpaper (pcmanfm-qt draws the LXQt desktop): the dark blue-grey
+# gradient of earlier MicroLinux releases, as a small PNG
+mkdir -p "$T/usr/share/microlinux"
+python3 - "$T/usr/share/microlinux/wallpaper.png" <<'EOP'
+import struct, sys, zlib
+w, h, top, bottom = 64, 512, (0x43, 0x4c, 0x5e), (0x1b, 0x1f, 0x27)
+rows = b"".join(b"\0" + bytes(round(a + (b - a) * y / (h - 1)) for a, b in zip(top, bottom)) * w for y in range(h))
+chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))
+open(sys.argv[1], "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+                              + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b""))
+EOP
 
 # gdk-pixbuf's loaders.cache is generated from the build host's loaders, which
 # have no SVG loader: register librsvg's (entry as in librsvg 2.50 io-svg.c)

@@ -1,0 +1,16 @@
+config BR2_PACKAGE_KF6_KWINDOWSYSTEM
+	bool "kf6-kwindowsystem"
+	select BR2_PACKAGE_KF6_EXTRA_CMAKE_MODULES
+	select BR2_PACKAGE_HOST_QT6TOOLS
+	select BR2_PACKAGE_HOST_QT6TOOLS_LINGUIST_TOOLS
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_XCB
+	select BR2_PACKAGE_XLIB_LIBX11
+	select BR2_PACKAGE_LIBXCB
+	select BR2_PACKAGE_XCB_UTIL_KEYSYMS
+	select BR2_PACKAGE_XCB_UTIL_WM
+	help
+	  KWindowSystem (KDE Frameworks 6): access to the window
+	  manager and window properties (X11).
+
+	  https://invent.kde.org/frameworks/kwindowsystem

@@ -1,0 +1,7 @@
+config BR2_PACKAGE_LXQT_BUILD_TOOLS
+	bool "lxqt-build-tools"
+	select BR2_PACKAGE_QT6
+	help
+	  LXQt build tools: CMake modules shared by the LXQt components.
+
+	  https://github.com/lxqt/lxqt-build-tools

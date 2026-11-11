@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Name=Prism Launcher
+Comment=Discover, manage, and play Minecraft instances
+Type=Application
+Terminal=false
+Exec=prismlauncher %U
+StartupNotify=true
+Icon=/opt/prismlauncher/share/icons/hicolor/256x256/apps/org.prismlauncher.PrismLauncher.png
+Categories=Game;
+Keywords=game;minecraft;mc;
+StartupWMClass=PrismLauncher

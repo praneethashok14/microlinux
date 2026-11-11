@@ -8,8 +8,9 @@ A tiny, fully functional Linux distribution for **x86_64** and **aarch64**
   with UEFI firmware). The live ISO is also a bootable USB image.
 - **Real Linux userland**: glibc, BusyBox, bash, util-linux, e2fsprogs, parted,
   iproute2, wpa_supplicant, BlueZ, OpenSSH client, curl, sudo, htop, nano/vi, strace.
-- **Desktop**: Xorg + JWM (panel, menu, task list, tray, clock), xterm,
-  PCManFM file manager, and a Settings app (network/Wi-Fi, Bluetooth, display,
+- **Desktop**: Xorg + LXQt 2.4 (Qt 6) with the Openbox window manager: panel,
+  application menu, QTerminal, PCManFM-Qt file manager and desktop, LXQt
+  configuration center, and a MicroLinux Settings app (network/Wi-Fi, Bluetooth, display,
   sound, wallpaper, keyboard, time zone, password, packages).
 - **Browser**: official Mozilla Firefox ESR, shipped as an optional package.
 - **EL7 binary compatibility**: runs RHEL/CentOS 7 binaries of the same
@@ -20,7 +21,13 @@ A tiny, fully functional Linux distribution for **x86_64** and **aarch64**
   applications (Python, Perl, Ruby, git, gdb, vim, tmux, nmap, mpv, …) at
   [praneethashok14/microlinux-packagerepo](https://github.com/praneethashok14/microlinux-packagerepo).
 - **Installer**: `ml-install` writes a GPT disk with an ESP and an ext4 root
-  (x86_64: also bootable from BIOS).
+  (x86_64: also bootable from BIOS), or installs **alongside Windows** (dual
+  boot: free space, shared EFI partition, GRUB menu with Windows).
+- **GPU drivers** (x86_64): hardware OpenGL on Intel, AMD Radeon and NVIDIA
+  GeForce/RTX (Mesa iris/crocus/radeonsi/r600/nouveau, llvmpipe otherwise);
+  AMD/NVIDIA firmware from the repository.
+- **Minecraft**: Prism Launcher and Java 25/21/17/8 in the repository
+  (`sudo mlpkg install prismlauncher`).
 
 ## Download
 

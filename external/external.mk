@@ -1,14 +1,19 @@
 include $(sort $(wildcard $(BR2_EXTERNAL_MICROLINUX_PATH)/package/*/*.mk))
 
-# libfm (Vala-generated code) and pcmanfm mix related GObject pointer types;
+# libfm (Vala-generated code) mixes related GObject pointer types;
 # GCC 14 turned -Wincompatible-pointer-types into an error.
 LIBFM_CONF_ENV += CFLAGS="$(TARGET_CFLAGS) -Wno-error=incompatible-pointer-types"
-PCMANFM_CONF_ENV += CFLAGS="$(TARGET_CFLAGS) -Wno-error=incompatible-pointer-types"
 
-# No GPU drivers in the image: build Xorg without glamor. Otherwise the
-# modesetting driver references GBM symbols that only glamor provides, and
-# with Buildroot's -z now (full RELRO) it fails to load ("no screens found").
+# x86_64 has GPU drivers (Mesa iris/crocus/radeonsi/r600/nouveau + GBM), so
+# Xorg gets glamor (loaded first by xorg.conf.d/05-glamor.conf, see post-build.sh):
+# the modesetting driver then offers DRI3 and OpenGL
+# programs (games) render on the GPU. aarch64 has no GPU drivers in the
+# image: build Xorg without glamor there. Otherwise the modesetting driver
+# references GBM symbols that only glamor provides, and with Buildroot's
+# -z now (full RELRO) it fails to load ("no screens found").
+ifneq ($(BR2_x86_64),y)
 XSERVER_XORG_SERVER_CONF_OPTS += --disable-glamor
+endif
 
 # glibc 2.42's x86_64 modf/modff ifunc variants call __trunc/__truncf, which
 # only exist when the library is built with -O2: -Os fails to link libc.so.

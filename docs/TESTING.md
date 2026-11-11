@@ -33,7 +33,7 @@ architecture:
 | 4 | Mount filesystems | iso9660 + squashfs + overlayfs live stack; create, mount and fsck ext4 and FAT images |
 | 5 | Network | DHCP address, DNS, HTTPS with certificate validation (and rejection of a self-signed cert), SSH handshake |
 | 6 | Tools | presence of the essential utilities, syslog round-trip, user and permission management |
-| 7 | Graphical environment | Xorg + JWM running, `xdpyinfo`, resolution change, xterm and PCManFM windows; screenshots |
+| 7 | Graphical environment | Xorg + LXQt (Openbox, lxqt-panel, pcmanfm-qt desktop) running, `xdpyinfo`, resolution change, QTerminal and PCManFM-Qt windows; screenshots |
 | 8 | Browser | Firefox renders an HTTPS page headless; opens a window on the desktop; download to ~/Downloads |
 | 9 | Compatible ELF binary | CentOS 7 `tree` and `bash` run natively (elfcheck verdict NATIVE) |
 | 10 | EL7 compatibility | `el7-compat.sh`: 20 tests with real CentOS 7 binaries (native and el7-run), TLS with EL7 OpenSSL 1.0.2k, el7-chroot |

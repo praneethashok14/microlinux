@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=System log
+Comment=Follow the system log
+Icon=text-x-generic
+Exec=sudo ml-log -f
+Terminal=true
+Categories=System;

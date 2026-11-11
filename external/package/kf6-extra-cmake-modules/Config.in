@@ -1,0 +1,7 @@
+config BR2_PACKAGE_KF6_EXTRA_CMAKE_MODULES
+	bool "kf6-extra-cmake-modules"
+	help
+	  Extra CMake Modules (ECM) 6: CMake modules used to build KDE
+	  Frameworks 6 and programs based on them.
+
+	  https://invent.kde.org/frameworks/extra-cmake-modules

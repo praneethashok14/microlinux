@@ -1,0 +1,15 @@
+config BR2_PACKAGE_KF6_KIDLETIME
+	bool "kf6-kidletime"
+	select BR2_PACKAGE_KF6_EXTRA_CMAKE_MODULES
+	select BR2_PACKAGE_HOST_QT6TOOLS
+	select BR2_PACKAGE_HOST_QT6TOOLS_LINGUIST_TOOLS
+	select BR2_PACKAGE_QT6BASE_GUI
+	select BR2_PACKAGE_QT6BASE_DBUS
+	select BR2_PACKAGE_QT6BASE_XCB
+	select BR2_PACKAGE_XLIB_LIBX11
+	select BR2_PACKAGE_LIBXCB
+	help
+	  KIdleTime (KDE Frameworks 6): reports how long the user has
+	  been idle (X11 XSync).
+
+	  https://invent.kde.org/frameworks/kidletime

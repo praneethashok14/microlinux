@@ -43,7 +43,7 @@ copied to `out/`: `microlinux-<arch>.iso`, `microlinux-<arch>-base.iso`,
 `size-report-<arch>.txt`. `./scripts/progress.sh -w [arch]` shows a progress bar.
 
 Other targets: `./scripts/build.sh --arch x86_64 menuconfig`, `linux-menuconfig`,
-`jwm-rebuild`, … (any Buildroot make target).
+`lxqt-panel-rebuild`, … (any Buildroot make target).
 
 ## Configuration: one source, two architectures
 
@@ -108,7 +108,7 @@ external/                             BR2_EXTERNAL tree
     post-build.sh                     rootfs tweaks (setuid Xorg, EL7 paths, caches)
     post-image.sh                     initramfs, packages, dependency checks, ISOs, size report
   package/
-    jwm/                              JWM window manager
+    lxqt-*/, kf6-*/, ...              LXQt desktop and its libraries
     libxcrypt-compat/                 libcrypt.so.1 for old binaries
     ncurses5-compat/                  ncurses ABI 5 libraries
     firefox-bin/                      Firefox ESR → firefox.mlp

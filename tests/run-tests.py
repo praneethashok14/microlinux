@@ -341,7 +341,9 @@ def run_live_tests(args, rep):
         rep.check("5b", "DNS resolution", rc == 0 and ("Address" in out), out[:200])
         rc, out = vm.sh("curl -sS -o /dev/null -w 'HTTP %{http_code} TLS-verify=%{ssl_verify_result}' https://www.mozilla.org/", 40)
         rep.check("5c", "HTTPS with certificate validation (curl)", rc == 0 and "HTTP 200" in out and "verify=0" in out, out)
-        rc, out = vm.sh("curl -sS -o /dev/null https://self-signed.badssl.com/ 2>&1; echo", 40)
+        # retried: the public test server sometimes resets the connection
+        rc, out = vm.sh("for i in 1 2 3; do o=$(curl -sS -o /dev/null https://self-signed.badssl.com/ 2>&1); "
+                        "case \"$o\" in *SSL*|*ertificate*) break;; esac; sleep 3; done; echo \"$o\"", 90)
         rep.check("5d", "Invalid certificate is rejected", "certificate" in out.lower() or "SSL" in out, out[:160])
         rc, out = vm.sh("ssh -V 2>&1; timeout 20 ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 | tail -n1", 40)
         rep.check("5e", "SSH client (handshake with github.com)", "OpenSSH" in out and ("Permission denied" in out or "successfully authenticated" in out), out.replace("\n", "; ")[:200])
@@ -357,11 +359,11 @@ def run_live_tests(args, rep):
         rep.check("T3", "User management and permissions", "tuser" in out and "Permission denied" in out, out.replace("\n", "; ")[:200])
         # as the desktop menu runs it: user, no terminal, no password prompt possible
         rc, out = vm.sh("su user -c 'setsid sh -c \"sudo -n true && echo sudo-ok; sudo -n -l /usr/sbin/poweroff\" </dev/null 2>&1'")
+        rep.check("T4", "sudo for the live user without a password (menu actions)", "sudo-ok" in out and "/usr/sbin/poweroff" in out, out.replace("\n", "; ")[:200])
         rc, out = vm.sh("cat /proc/asound/cards | head -n 2; amixer get Master 2>/dev/null | grep -o '\\[on\\]\\|\\[off\\]' | head -n1; "
                         "su user -c 'timeout 20 speaker-test -t wav -c 2 -l 1 >/dev/null 2>&1' && echo played")
         rep.check("S", "Sound: HDA card detected, mixer set up at boot, test sound plays", "HDA" in out and "played" in out and "[off]" not in out,
                   out.replace("\n", "; ")[:200])
-        rep.check("T4", "sudo for the live user without a password (menu actions)", "sudo-ok" in out and "/usr/sbin/poweroff" in out, out.replace("\n", "; ")[:200])
 
         # packages
         rc, out = vm.sh("mlpkg list -i; mlpkg verify")
@@ -392,29 +394,41 @@ def run_live_tests(args, rep):
             rep.notes.append(f"package repository tests skipped: {os.path.relpath(repo, ROOT)} not built")
 
         # 7: graphical environment (started by autologin on tty1)
-        rc, out = vm.sh(f"for i in $(seq {60 * SCALE}); do pgrep -x jwm >/dev/null && break; sleep 1; done; pgrep -l -x X || pgrep -l -x Xorg; pgrep -l -x jwm; "
+        rc, out = vm.sh(f"for i in $(seq {60 * SCALE}); do pgrep -x lxqt-panel >/dev/null && break; sleep 1; done; pgrep -l -x X || pgrep -l -x Xorg; pgrep -l -x openbox; pgrep -l -x lxqt-panel; pgrep -l -x pcmanfm-qt; "
                         "su user -c 'DISPLAY=:0 xdpyinfo' | grep -E 'dimensions|depth of root'", 90)
-        ok = "jwm" in out and "dimensions" in out   # xdpyinfo answering proves the X server is up
+        # xdpyinfo answering proves the X server is up; pcmanfm-qt draws the desktop
+        ok = all(p in out for p in ("openbox", "lxqt-panel", "pcmanfm-qt", "dimensions"))
         time.sleep(3)
         shot = vm.screenshot("desktop")
-        rep.check("7", "Graphical environment (Xorg + JWM)", ok, out.replace("\n", "; ") + f" - screenshot {os.path.basename(shot)}")
+        rep.check("7", "Graphical environment (Xorg + LXQt + Openbox)", ok, out.replace("\n", "; ") + f" - screenshot {os.path.basename(shot)}")
+        if not ok:   # keep the reason in the report
+            rc, out = vm.sh("tail -n 25 /home/user/.xsession.log; grep -h -E '\\((EE|WW)\\)' /var/log/Xorg.0.log /home/user/.local/share/xorg/Xorg.0.log 2>/dev/null | tail -n 15", 60)
+            rep.notes.append("desktop start failed - ~/.xsession.log and Xorg errors:\n```\n" + out.strip() + "\n```")
         rc, out = vm.sh("su user -c 'DISPLAY=:0 xrandr | head -n 3'; su user -c 'DISPLAY=:0 ml-display set 1024x768' && "
                         "su user -c 'DISPLAY=:0 xrandr | grep \"\\*\"'; su user -c 'DISPLAY=:0 ml-display set 1280x800'")
         rep.check("7b", "Display resolution change (xrandr)", "1024x768" in out, out.replace("\n", "; ")[:200])
-        rc, out = vm.sh(f"su user -c 'DISPLAY=:0 xterm -T mltest-term -e sleep {30 * SCALE} &'; sleep {3 * SCALE}; "
-                        "su user -c 'DISPLAY=:0 xwininfo -root -tree' | grep -c mltest-term")
-        rep.check("7c", "Terminal emulator opens", count_ok(out), out[-150:])
-        rc, out = vm.sh(f"su user -c 'DISPLAY=:0 pcmanfm /etc &'; sleep {6 * SCALE}; su user -c 'DISPLAY=:0 xwininfo -root -tree' | grep -ci 'etc'")
+        # the window must open and the command must really run in it (a file appears)
+        rc, out = vm.sh(f"rm -f /tmp/qterm-ok; su user -c 'cd; DISPLAY=:0 qterminal -e sh -c \"touch /tmp/qterm-ok; sleep {30 * SCALE}\" >/tmp/qterm.log 2>&1 &'; "
+                        f"sleep {5 * SCALE}; su user -c 'DISPLAY=:0 xwininfo -root -tree' | grep -c '\"qterminal\"'; "
+                        "ls /tmp/qterm-ok 2>/dev/null || tail -n 5 /tmp/qterm.log")
+        rep.check("7c", "Terminal emulator (QTerminal) opens and runs a command", any(l.strip().isdigit() and int(l) > 0 for l in out.splitlines()) and "/tmp/qterm-ok" in out,
+                  out.replace("\n", "; ")[-200:])
+        # menu entries with Terminal=true start a program directly: qterminal -e PROGRAM ARGS
+        rc, out = vm.sh(f"rm -f /tmp/qterm-ok2; su user -c 'cd; DISPLAY=:0 qterminal -e touch /tmp/qterm-ok2 >/tmp/qterm2.log 2>&1 &'; "
+                        f"sleep {5 * SCALE}; ls /tmp/qterm-ok2 2>/dev/null || tail -n 5 /tmp/qterm2.log")
+        rep.check("7e", "QTerminal runs a program directly (menu entries with Terminal=true)", "/tmp/qterm-ok2" in out and "CRASHED" not in out,
+                  out.replace("\n", "; ")[-200:])
+        rc, out = vm.sh(f"su user -c 'DISPLAY=:0 pcmanfm-qt /etc &'; sleep {6 * SCALE}; su user -c 'DISPLAY=:0 xwininfo -root -tree' | grep -ci 'etc'")
         vm.screenshot("filemanager")
-        rep.check("7d", "File manager (PCManFM, GTK3) opens", count_ok(out), out[-150:])
-        vm.sh("pkill pcmanfm; pkill -f mltest-term")
+        rep.check("7d", "File manager (PCManFM-Qt) opens", count_ok(out), out[-150:])
+        vm.sh("pkill -f 'pcmanfm-qt /etc'; pkill -f 'qterminal -e'")
 
         # idle RAM, desktop running, no browser
         time.sleep(15)
         rc, out = vm.sh("free -m | awk '/^Mem:/ {print $3}'; awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf \"%d\", (t-a)/1024}' /proc/meminfo")
         lines = out.split()
         used, notavail = (lines + ["?", "?"])[:2]
-        rep.check("R", "Idle RAM with desktop (no browser)", used.isdigit() and int(used) < 100,
+        rep.check("R", "Idle RAM with desktop (no browser)", used.isdigit() and int(used) < 400,
                   f"{used} MiB used by processes+kernel (free 'used'); {notavail} MiB MemTotal-MemAvailable (also counts tmpfs/page cache that cannot be dropped)")
 
         # 8: browser

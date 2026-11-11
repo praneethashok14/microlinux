@@ -1,22 +1,32 @@
 #!/bin/sh
 # ml-install - install MicroLinux from the live medium to a disk
 #
-#   sudo ml-install [-y] [--hostname NAME] DISK
+#   sudo ml-install [-y] [--hostname NAME] DISK             (whole disk)
+#   sudo ml-install [-y] [--hostname NAME] --alongside DISK  (dual boot)
 #
-# Creates a GPT with a 256 MiB EFI system partition (FAT32, label MLBOOT) and
+# Whole disk: creates a GPT with a 256 MiB EFI system partition (FAT32, label MLBOOT) and
 # an ext4 root (label MLROOT) on DISK, copies the pristine system image, the
 # active mlpkg packages, the kernel and the GRUB EFI loader (installed to the
 # removable-media path EFI/BOOT/BOOT<arch>.EFI, which every UEFI firmware boots
 # without NVRAM entries). On x86_64 it also adds a 1 MiB BIOS boot partition
 # and installs GRUB for BIOS, so the disk boots on BIOS and UEFI PCs.
 # ALL DATA ON DISK IS DESTROYED.
+#
+# --alongside (dual boot with Windows or another system, UEFI only): keeps all
+# existing partitions and puts the ext4 root (MLROOT) into the largest free
+# space on DISK; first make room, e.g. "Shrink Volume" in Windows Disk
+# Management. The boot loader goes to EFI/microlinux/ on the existing EFI
+# system partition (one is created in the free space if DISK has none), gets a
+# firmware boot entry "MicroLinux" (first in the boot order) and a GRUB menu
+# with Windows in it.
 set -e
-YES=; HOST=microlinux
+YES=; HOST=microlinux; ALONG=
 while [ $# -gt 0 ]; do
 	case "$1" in
 		-y) YES=1 ;;
 		--hostname) HOST=$2; shift ;;
-		-h|--help) sed -n '2,13s/^# \{0,1\}//p' "$0"; exit 0 ;;
+		--alongside) ALONG=1 ;;
+		-h|--help) sed -n '2,22s/^# \{0,1\}//p' "$0"; exit 0 ;;
 		*) DISK=$1 ;;
 	esac
 	shift
@@ -34,52 +44,128 @@ fi
 live=$(findfs LABEL=MICROLINUX 2>/dev/null || true)
 case "$live" in "$DISK"*) die "$DISK holds the live medium you booted from" ;; esac
 
+case "$DISK" in *[0-9]) P=${DISK}p ;; *) P=$DISK ;; esac
 size=$(( $(cat "/sys/class/block/${DISK##*/}/size") / 2048 ))
 [ "$size" -ge 2048 ] || die "$DISK is too small (${size} MiB, need at least 2048 MiB)"
 
-echo
-echo "Installing MicroLinux $(cat /etc/microlinux-release) to $DISK (${size} MiB)."
-lsblk "$DISK"
-if [ -z "$YES" ]; then
-	printf "\nALL DATA ON %s WILL BE ERASED. Type YES to continue: " "$DISK"; read -r ans
-	[ "$ans" = YES ] || die "aborted"
+ESPTYPE=c12a7328-f81f-11d2-ba4b-00a0c93ec93b
+SS=$(cat "/sys/class/block/${DISK##*/}/queue/logical_block_size" 2>/dev/null || echo 512)
+MIB=$((1048576 / SS))   # sectors per MiB
+# largest free region of DISK as "FIRST LAST" sector, aligned to whole MiB
+# (exact sectors: the backup GPT at the end of the disk isn't free)
+free_space() {
+	parted -m -s "$DISK" unit s print free 2>/dev/null | awk -F: -v m=$MIB '$5 ~ /^free/ {
+		s = $2; e = $3; sub(/s/, "", s); sub(/s/, "", e)
+		s = int((s + m - 1) / m) * m; if (s < m) s = m
+		e = int((e + 1) / m) * m - 1
+		if (e - s > best) { best = e - s; r = s " " e } } END { if (r) print r }'
+}
+mib() { echo $(( ($2 - $1 + 1) / MIB )); }   # size of FIRST LAST in MiB
+partnums() { parted -m -s "$DISK" print 2>/dev/null | awk -F: '$1 ~ /^[0-9]+$/ { print $1 }'; }
+
+if [ -z "$ALONG" ] && [ -z "$YES" ] && [ -n "$(partnums)" ]; then
+	set -- $(free_space)
+	if [ -n "$1" ] && [ "$(mib $1 $2)" -ge 2048 ] && [ -d /sys/firmware/efi ]; then
+		echo
+		lsblk -o NAME,SIZE,FSTYPE,LABEL "$DISK"
+		echo
+		echo "$DISK already has partitions and $(mib $1 $2) MiB of free space."
+		echo "  1) install alongside them (dual boot, keeps Windows and all data)"
+		echo "  2) erase the whole disk"
+		printf "Choice [1/2]: "; read -r ans
+		case "$ans" in 1) ALONG=1 ;; 2) ;; *) die "aborted" ;; esac
+	fi
 fi
 
-case "$DISK" in *[0-9]) P=${DISK}p ;; *) P=$DISK ;; esac
+if [ -n "$ALONG" ]; then
+	[ -d /sys/firmware/efi ] || die "--alongside needs a UEFI boot: start the live system in UEFI mode (not Legacy/CSM)"
+	parted -m -s "$DISK" print 2>/dev/null | grep -q ':gpt:' ||
+		die "--alongside needs a GPT disk ($DISK is not GPT; Windows in Legacy/MBR mode is not supported)"
+	set -- $(free_space)
+	[ -n "$1" ] && [ "$(mib $1 $2)" -ge 2048 ] ||
+		die "not enough free space on $DISK (largest free region: $(mib ${1:-1} ${2:-0}) MiB, need 2048 MiB). Make room first, e.g. Windows Disk Management > Shrink Volume"
+	FSTART=$1; FEND=$2
+	ESP=$(lsblk -rnpo NAME,PARTTYPE "$DISK" | awk -v t=$ESPTYPE 'tolower($2) == t { print $1; exit }')
+	echo
+	echo "Installing MicroLinux $(cat /etc/microlinux-release) alongside the systems on $DISK."
+	lsblk -o NAME,SIZE,FSTYPE,LABEL "$DISK"
+	echo
+	echo "Kept: all existing partitions. New: MicroLinux root in the free space ($(mib $FSTART $FEND) MiB)."
+	if [ -n "$ESP" ]; then echo "Boot loader: EFI/microlinux/ on the existing EFI system partition $ESP."
+	else echo "Boot loader: a new 256 MiB EFI system partition (none found on $DISK)."; fi
+	if blkid $(lsblk -rnpo NAME "$DISK") 2>/dev/null | grep -q 'TYPE="BitLocker"'; then
+		echo
+		echo "NOTE: Windows uses BitLocker / device encryption. Have the recovery key at hand"
+		echo "(account.microsoft.com/devices/recoverykey): Windows may ask for it once after this."
+	fi
+	if [ -z "$YES" ]; then
+		printf "\nType YES to continue: "; read -r ans
+		[ "$ans" = YES ] || die "aborted"
+	fi
+else
+	echo
+	echo "Installing MicroLinux $(cat /etc/microlinux-release) to $DISK (${size} MiB)."
+	lsblk "$DISK"
+	if [ -z "$YES" ]; then
+		printf "\nALL DATA ON %s WILL BE ERASED. Type YES to continue: " "$DISK"; read -r ans
+		[ "$ans" = YES ] || die "aborted"
+	fi
+fi
+
 T=/mnt/ml-target
 BIOS=; command -v grub-install >/dev/null && [ -d /usr/lib/grub/i386-pc ] && BIOS=1
 case "$(uname -m)" in aarch64) SERIAL=ttyAMA0 ;; *) SERIAL=ttyS0 ;; esac
 
 echo "==> partitioning"
 grep -q "^$DISK" /proc/mounts && { grep "^$DISK" /proc/mounts | cut -d' ' -f2 | sort -r | xargs -r umount; }
-wipefs -aq "$DISK"
-# partitions 1 (ESP) and 2 (root) are the same everywhere; BIOS boot is number 3
-if [ -n "$BIOS" ]; then
-	parted -s "$DISK" mklabel gpt \
-		mkpart MLBOOT fat32 2MiB 258MiB set 1 esp on \
-		mkpart MLROOT ext4 258MiB 100% \
-		mkpart BIOSBOOT 1MiB 2MiB set 3 bios_grub on
+if [ -n "$ALONG" ]; then
+	# new partitions only, in the free region; the numbers are whatever is free
+	before=$(partnums)
+	if [ -z "$ESP" ]; then
+		parted -s "$DISK" mkpart MLBOOT fat32 ${FSTART}s $((FSTART + 256 * MIB - 1))s
+		n=$(partnums | grep -vxF "$before" | head -n 1); before=$(partnums)
+		parted -s "$DISK" set "$n" esp on
+		ESP=$P$n; NEWESP=1; FSTART=$((FSTART + 256 * MIB))
+	fi
+	parted -s "$DISK" mkpart MLROOT ext4 ${FSTART}s ${FEND}s
+	n=$(partnums | grep -vxF "$before" | head -n 1)
+	[ -n "$n" ] || die "creating the partition failed"
+	ROOTDEV=$P$n
+	partx -u "$DISK" 2>/dev/null || true
+	i=0; while [ ! -b "$ROOTDEV" ] && [ $i -lt 10 ]; do sleep 1; i=$((i + 1)); done
+	[ -b "$ROOTDEV" ] && [ -b "$ESP" ] || die "partition $ROOTDEV did not appear"
+	ESPNUM=${ESP##*[!0-9]}
 else
-	parted -s "$DISK" mklabel gpt \
-		mkpart MLBOOT fat32 1MiB 257MiB set 1 esp on \
-		mkpart MLROOT ext4 257MiB 100%
+	wipefs -aq "$DISK"
+	# partitions 1 (ESP) and 2 (root) are the same everywhere; BIOS boot is number 3
+	if [ -n "$BIOS" ]; then
+		parted -s "$DISK" mklabel gpt \
+			mkpart MLBOOT fat32 2MiB 258MiB set 1 esp on \
+			mkpart MLROOT ext4 258MiB 100% \
+			mkpart BIOSBOOT 1MiB 2MiB set 3 bios_grub on
+	else
+		parted -s "$DISK" mklabel gpt \
+			mkpart MLBOOT fat32 1MiB 257MiB set 1 esp on \
+			mkpart MLROOT ext4 257MiB 100%
+	fi
+	partx -u "$DISK" 2>/dev/null || true
+	n=0; while [ ! -b "${P}2" ] && [ $n -lt 10 ]; do sleep 1; n=$((n + 1)); done
+	[ -b "${P}2" ] || die "partitions did not appear"
+	ESP=${P}1; ROOTDEV=${P}2; NEWESP=1
 fi
-partx -u "$DISK" 2>/dev/null || true
-n=0; while [ ! -b "${P}2" ] && [ $n -lt 10 ]; do sleep 1; n=$((n + 1)); done
-[ -b "${P}2" ] || die "partitions did not appear"
 
 echo "==> creating filesystems"
-mkfs.vfat -F 32 -n MLBOOT "${P}1" >/dev/null
-mkfs.ext4 -q -F -L MLROOT "${P}2"
-ROOT_UUID=$(blkid -s UUID -o value "${P}2")
-ESP_UUID=$(blkid -s UUID -o value "${P}1")
+[ -z "$NEWESP" ] || mkfs.vfat -F 32 -n MLBOOT "$ESP" >/dev/null
+mkfs.ext4 -q -F -L MLROOT "$ROOTDEV"
+ROOT_UUID=$(blkid -s UUID -o value "$ROOTDEV")
+ESP_UUID=$(blkid -s UUID -o value "$ESP")
 
 echo "==> copying system ($(du -sh /live/rootfs 2>/dev/null | cut -f1))"
 mkdir -p $T
-mount "${P}2" $T
+mount "$ROOTDEV" $T
 cp -a /live/rootfs/. $T/
 mkdir -p $T/boot/efi
-mount "${P}1" $T/boot/efi
+mount "$ESP" $T/boot/efi
 
 echo "==> copying packages"
 mkdir -p $T/var/lib/mlpkg/installed
@@ -93,16 +179,35 @@ for a in /run/mlpkg/active/*; do
 done
 
 echo "==> installing boot loader and kernel"
-mkdir -p $T/boot/efi/EFI/BOOT $T/boot/efi/boot/grub
 # the UEFI loader set: GRUB, or with Secure Boot shim + signed GRUB + MOK Manager
-cp /live/medium/EFI/BOOT/* $T/boot/efi/EFI/BOOT/
-cp /live/medium/ENROLL_THIS_KEY_IN_MOK_MANAGER.cer $T/boot/efi/ 2>/dev/null || true
-cp /live/medium/boot/vmlinuz /live/medium/boot/initramfs.cpio.gz $T/boot/efi/boot/
-cat > $T/boot/efi/boot/grub/grub.cfg <<G
+if [ -n "$ALONG" ]; then
+	# a directory of our own on the shared ESP; the kernel stays on MLROOT
+	L=$T/boot/efi/EFI/microlinux
+	rm -rf "$L"; mkdir -p "$L"
+	for f in /live/medium/EFI/BOOT/*; do
+		b=${f##*/}
+		case "$b" in
+			BOOTX64.EFI) b=shimx64.efi ;;     # shim: loads grubx64.efi from this directory
+			BOOTAA64.EFI) b=grubaa64.efi ;;   # arm64: GRUB itself
+		esac
+		cp "$f" "$L/$b"
+	done
+	cp /live/medium/ENROLL_THIS_KEY_IN_MOK_MANAGER.cer "$L/" 2>/dev/null || true
+	LOADER=$(cd "$L" && ls shimx64.efi grubaa64.efi 2>/dev/null | head -n 1)
+	cp /live/medium/boot/vmlinuz /live/medium/boot/initramfs.cpio.gz $T/boot/
+	CFG=$L/grub.cfg; KROOT=$ROOT_UUID; TIMEOUT=5
+else
+	mkdir -p $T/boot/efi/EFI/BOOT $T/boot/efi/boot/grub
+	cp /live/medium/EFI/BOOT/* $T/boot/efi/EFI/BOOT/
+	cp /live/medium/ENROLL_THIS_KEY_IN_MOK_MANAGER.cer $T/boot/efi/ 2>/dev/null || true
+	cp /live/medium/boot/vmlinuz /live/medium/boot/initramfs.cpio.gz $T/boot/efi/boot/
+	CFG=$T/boot/efi/boot/grub/grub.cfg; KROOT=$ESP_UUID; TIMEOUT=3
+fi
+cat > "$CFG" <<G
 set default=0
-set timeout=3
+set timeout=$TIMEOUT
 insmod all_video
-search --no-floppy --fs-uuid --set=root $ESP_UUID
+search --no-floppy --fs-uuid --set=root $KROOT
 if [ "\$grub_platform" = pc ]; then
 	set gfxpayload=1280x800x32,1024x768x32,auto
 fi
@@ -124,10 +229,23 @@ menuentry "MicroLinux (emergency initramfs shell)" {
 	initrd /boot/initramfs.cpio.gz
 }
 if [ "\$grub_platform" = efi ]; then
+	if search --no-floppy --file --set=ml_win /EFI/Microsoft/Boot/bootmgfw.efi; then
+		menuentry "Windows" {
+			set root=\$ml_win
+			chainloader /EFI/Microsoft/Boot/bootmgfw.efi
+		}
+	fi
 	menuentry "UEFI firmware settings" { fwsetup }
 fi
 G
-if [ -n "$BIOS" ]; then
+if [ -n "$ALONG" ]; then
+	echo "    firmware boot entry 'MicroLinux' -> \\EFI\\microlinux\\$LOADER"
+	for b in $(efibootmgr 2>/dev/null | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\{0,1\} MicroLinux\b.*/\1/p'); do
+		efibootmgr -q -b "$b" -B 2>/dev/null || true
+	done
+	efibootmgr -q -c -d "$DISK" -p "$ESPNUM" -L MicroLinux -l "\\EFI\\microlinux\\$LOADER" ||
+		echo "    WARNING: could not add the boot entry; choose EFI/microlinux/$LOADER in the firmware boot menu"
+elif [ -n "$BIOS" ]; then
 	echo "    BIOS boot (GRUB i386-pc)"
 	grub-install --target=i386-pc --boot-directory=$T/boot/efi/boot \
 		--modules="part_gpt fat" --locales= --fonts= --themes= "$DISK" > /tmp/grub-install.log 2>&1 ||
@@ -156,4 +274,9 @@ fi
 sync
 umount $T/boot/efi $T
 echo
-echo "Done. Remove the live medium and reboot to start MicroLinux from $DISK."
+if [ -n "$ALONG" ]; then
+	echo "Done. Remove the live medium and reboot: MicroLinux starts first, with Windows"
+	echo "in its menu. The firmware boot menu (Dell: F12) also has both."
+else
+	echo "Done. Remove the live medium and reboot to start MicroLinux from $DISK."
+fi

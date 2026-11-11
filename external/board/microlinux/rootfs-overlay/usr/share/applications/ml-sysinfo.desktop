@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=System information
+Comment=Version, memory, disks and network at a glance
+Icon=computer
+Exec=sh -c "ml-sysinfo; echo; printf 'Press Enter to close'; read x"
+Terminal=true
+Categories=System;

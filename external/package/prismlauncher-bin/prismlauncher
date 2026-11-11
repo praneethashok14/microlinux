@@ -1,0 +1,7 @@
+#!/bin/sh
+# Prism Launcher (the bundled start script expects a writable, portable copy)
+[ "$(id -u)" != 0 ] || { echo "prismlauncher: don't run it as root" >&2; exit 1; }
+# OpenGL/Vulkan features of the launcher window don't work in this bundle
+# (sharun); the game itself uses the system's OpenGL
+export PRISMLAUNCHER_DISABLE_GLVULKAN=1
+exec /opt/prismlauncher/bin/prismlauncher "$@"
