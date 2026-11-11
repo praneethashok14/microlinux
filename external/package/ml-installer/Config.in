@@ -1,0 +1,9 @@
+config BR2_PACKAGE_ML_INSTALLER
+	bool "ml-installer (MicroLinux graphical installer)"
+	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
+	select BR2_PACKAGE_HOST_RUSTC
+	help
+	  Graphical installer for MicroLinux, written in Rust with egui:
+	  choose a disk (erase it, or install alongside Windows), set the
+	  host name and passwords, and watch the installation. The work
+	  is done by ml-install, run through sudo.

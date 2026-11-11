@@ -425,6 +425,14 @@ def run_live_tests(args, rep):
         vm.screenshot("filemanager")
         rep.check("7d", "File manager (PCManFM-Qt) opens", count_ok(out), out[-150:])
         vm.sh("pkill -f 'pcmanfm-qt /etc'; pkill -f 'qterminal -e'")
+        # the graphical installer (Rust + egui) opens its window
+        rc, out = vm.sh(f"su user -c 'cd; DISPLAY=:0 ml-installer >/tmp/mli.log 2>&1 &'; "
+                        f"for i in $(seq {20 * SCALE}); do su user -c 'DISPLAY=:0 xwininfo -root -tree' | grep -q 'Install MicroLinux' && break; sleep 1; done; "
+                        "tail -n 3 /tmp/mli.log; su user -c 'DISPLAY=:0 xwininfo -root -tree' | grep -c 'Install MicroLinux'", 60)
+        time.sleep(2 * SCALE)
+        shot = vm.screenshot("installer")
+        rep.check("7g", "Graphical installer (ml-installer) opens", count_ok(out), out.replace("\n", "; ")[-150:] + f" - screenshot {os.path.basename(shot)}")
+        vm.sh("pkill -x ml-installer")
 
         # idle RAM, desktop running, no browser
         time.sleep(15)
@@ -480,7 +488,12 @@ def run_live_tests(args, rep):
         rep.check("10", "EL7 compatibility suite (20 tests, real CentOS 7 binaries)", rc == 0, (summary[0] if summary else out[-200:]) + " - tests/results/el7-compat.tap")
 
         if args.install:
-            rc, out = vm.sh("ml-install -y --hostname mltest /dev/vda 2>&1 | tail -n 4", 300)
+            # what the graphical installer sees (as the live user, through sudo)
+            rc, out = vm.sh("su user -c 'sudo -n ml-install --probe /dev/vda'", 60)
+            rep.check("I0", "Installer disk probe (ml-install --probe, as the GUI runs it)",
+                      rc == 0 and "size_mib=8192" in out and "free_mib=" in out, out.replace("\n", "; ")[:200])
+            # the passwords as the GUI passes them; I2 logs in with them
+            rc, out = vm.sh("printf 'root:microlinux\\nuser:live\\n' | ml-install -y --passwords-stdin --hostname mltest /dev/vda 2>&1 | tail -n 4", 300)
             rep.check("I1", "ml-install to virtio disk (GPT, ESP + ext4)", rc == 0 and "Done." in out, out.replace("\n", "; ")[:200])
     except Exception as e:
         rep.check("X", "test harness", False, f"{type(e).__name__}: {e}"[:300])

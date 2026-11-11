@@ -1449,7 +1449,8 @@ static char *cpu_model(void)
 
 static void about_install(GtkButton *b, gpointer d)
 {
-	run_in_terminal("Install MicroLinux", "sudo ml-install; echo; printf 'Press Enter to close'; read x");
+	const char *argv[] = {"ml-installer", NULL};
+	g_spawn_async(NULL, (char **)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
 }
 
 static void about_persist(GtkButton *b, gpointer d)

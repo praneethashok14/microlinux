@@ -60,7 +60,7 @@ for A in $ARCHES; do
 	rm -rf "${O:?}/target"
 	# Buildroot copies a local-source package once and doesn't notice later
 	# changes: rebuild ours every time (seconds)
-	make O="$O" ml-settings-dirclean ml-software-dirclean >/dev/null
+	make O="$O" ml-settings-dirclean ml-software-dirclean ml-installer-dirclean >/dev/null
 	set -o pipefail
 	if ! make -j"$(nproc)" O="$O" 2>&1 | tee "$O/build.log" | { grep --line-buffered -E '^>>>|Error|error:' || true; }; then
 		echo "BUILD FAILED ($A) - see $O/build.log"; tail -40 "$O/build.log"; exit 1

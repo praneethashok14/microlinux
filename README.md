@@ -20,7 +20,8 @@ A tiny, fully functional Linux distribution for **x86_64** and **aarch64**
 - **Packages**: `mlpkg` with dependencies and an online repository of about 90
   applications (Python, Perl, Ruby, git, gdb, vim, tmux, nmap, mpv, …) at
   [praneethashok14/microlinux-packagerepo](https://github.com/praneethashok14/microlinux-packagerepo).
-- **Installer**: `ml-install` writes a GPT disk with an ESP and an ext4 root
+- **Installer**: a graphical installer (`ml-installer`, Rust + egui) in front
+  of `ml-install`, which writes a GPT disk with an ESP and an ext4 root
   (x86_64: also bootable from BIOS), or installs **alongside Windows** (dual
   boot: free space, shared EFI partition, GRUB menu with Windows).
 - **GPU drivers** (x86_64): hardware OpenGL on Intel, AMD Radeon and NVIDIA

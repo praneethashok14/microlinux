@@ -19,14 +19,21 @@
 # system partition (one is created in the free space if DISK has none), gets a
 # firmware boot entry "MicroLinux" (first in the boot order) and a GRUB menu
 # with Windows in it.
+#
+# --passwords-stdin: read the new passwords as chpasswd lines (root:PASSWORD
+# and user:PASSWORD) from standard input instead of asking.
+# --probe DISK: print what an installation on DISK would find, as key=value
+# lines, and change nothing (used by the graphical installer, ml-installer).
 set -e
-YES=; HOST=microlinux; ALONG=
+YES=; HOST=microlinux; ALONG=; PWIN=; PROBE=
 while [ $# -gt 0 ]; do
 	case "$1" in
 		-y) YES=1 ;;
 		--hostname) HOST=$2; shift ;;
 		--alongside) ALONG=1 ;;
-		-h|--help) sed -n '2,22s/^# \{0,1\}//p' "$0"; exit 0 ;;
+		--passwords-stdin) PWIN=1 ;;
+		--probe) PROBE=1 ;;
+		-h|--help) sed -n '2,27s/^# \{0,1\}//p' "$0"; exit 0 ;;
 		*) DISK=$1 ;;
 	esac
 	shift
@@ -34,6 +41,11 @@ done
 die() { echo "ml-install: $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "run as root: sudo ml-install DISK"
 [ -d /live/rootfs/usr ] || die "not running from the MicroLinux live medium"
+if [ -n "$PWIN" ]; then
+	PASSWORDS=$(cat)
+	echo "$PASSWORDS" | grep -q '^root:.' && echo "$PASSWORDS" | grep -q '^user:.' ||
+		die "--passwords-stdin: expected the lines root:PASSWORD and user:PASSWORD"
+fi
 
 if [ -z "$DISK" ]; then
 	echo "Available disks:"
@@ -62,6 +74,28 @@ free_space() {
 }
 mib() { echo $(( ($2 - $1 + 1) / MIB )); }   # size of FIRST LAST in MiB
 partnums() { parted -m -s "$DISK" print 2>/dev/null | awk -F: '$1 ~ /^[0-9]+$/ { print $1 }'; }
+# the EFI system partition on DISK, if any (read from the partition table:
+# udev's information can lag behind partitions created in this session)
+find_esp() {
+	for p in $(lsblk -rnpo NAME,TYPE "$DISK" | awk '$2 == "part" { print $1 }'); do
+		[ "$(blkid -p -s PART_ENTRY_TYPE -o value "$p" 2>/dev/null)" = $ESPTYPE ] && { echo "$p"; return; }
+	done
+}
+
+if [ -n "$PROBE" ]; then
+	set -- $(free_space)
+	echo "disk=$DISK"
+	echo "size_mib=$size"
+	echo "model=$(lsblk -dno MODEL "$DISK" | sed 's/ *$//')"
+	if [ -d /sys/firmware/efi ]; then echo uefi=1; else echo uefi=0; fi
+	if parted -m -s "$DISK" print 2>/dev/null | grep -q ':gpt:'; then echo gpt=1; else echo gpt=0; fi
+	echo "free_mib=$( [ -n "$1" ] && mib $1 $2 || echo 0)"
+	echo "esp=$(find_esp)"
+	if blkid $(lsblk -rnpo NAME "$DISK") 2>/dev/null | grep -q 'TYPE="BitLocker"'; then echo bitlocker=1; else echo bitlocker=0; fi
+	# one line per partition, lsblk's KEY="VALUE" pairs (special characters escaped as \xNN)
+	lsblk -nbpP -o NAME,SIZE,FSTYPE,LABEL,TYPE "$DISK" | grep 'TYPE="part"' | sed 's/^/part=/'
+	exit 0
+fi
 
 if [ -z "$ALONG" ] && [ -z "$YES" ] && [ -n "$(partnums)" ]; then
 	set -- $(free_space)
@@ -85,7 +119,7 @@ if [ -n "$ALONG" ]; then
 	[ -n "$1" ] && [ "$(mib $1 $2)" -ge 2048 ] ||
 		die "not enough free space on $DISK (largest free region: $(mib ${1:-1} ${2:-0}) MiB, need 2048 MiB). Make room first, e.g. Windows Disk Management > Shrink Volume"
 	FSTART=$1; FEND=$2
-	ESP=$(lsblk -rnpo NAME,PARTTYPE "$DISK" | awk -v t=$ESPTYPE 'tolower($2) == t { print $1; exit }')
+	ESP=$(find_esp)
 	echo
 	echo "Installing MicroLinux $(cat /etc/microlinux-release) alongside the systems on $DISK."
 	lsblk -o NAME,SIZE,FSTYPE,LABEL "$DISK"
@@ -267,7 +301,11 @@ echo 'SYSLOGD_ARGS="-s 2048 -b 3"' > $T/etc/default/syslogd   # persistent /var/
 sed -i 's|^file:///live/medium/packages$|# file:///live/medium/packages  (live medium only)|' $T/etc/mlpkg/repos.conf
 cp -a /etc/wpa_supplicant/wpa_supplicant.conf $T/etc/wpa_supplicant/ 2>/dev/null || true
 
-if [ -z "$YES" ]; then
+if [ -n "$PWIN" ]; then
+	echo "$PASSWORDS" | grep -E '^(root|user):' | chroot $T /usr/sbin/chpasswd ||
+		die "setting the passwords failed"
+	echo "    passwords set for root and user"
+elif [ -z "$YES" ]; then
 	echo "Set the password for 'root':"; chroot $T /usr/bin/passwd root
 	echo "Set the password for 'user':"; chroot $T /usr/bin/passwd user
 else

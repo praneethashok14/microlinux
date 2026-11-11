@@ -163,7 +163,13 @@ Other repositories: `sudo mlpkg repo add https://host/path` (or `file:///mnt/usb
 
 ## Installing to a disk
 
-`sudo ml-install` (or menu → System → Install MicroLinux to disk). It asks
+**Install MicroLinux** (menu → System, or Settings → About) opens the
+graphical installer, `ml-installer` (Rust + egui): choose the disk and whether
+to erase it or install alongside the systems on it, set the computer name and
+passwords, check the summary, and watch the progress. It runs `ml-install`
+(through sudo) to do the work, so everything below applies to both.
+
+`sudo ml-install` is the same installer on the command line. It asks
 for the disk, then creates a GPT with a 256 MiB EFI partition and an ext4 root,
 copies the system and active packages, and sets passwords. The disk then boots
 through the UEFI removable-media path (`EFI/BOOT/BOOTAA64.EFI` on arm64,
