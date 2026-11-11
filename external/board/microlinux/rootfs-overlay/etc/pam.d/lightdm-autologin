@@ -1,0 +1,6 @@
+# LightDM: automatic login at boot (no password)
+auth		required	pam_permit.so
+account		required	pam_unix.so
+session		required	pam_limits.so
+session		required	pam_env.so
+session		required	pam_unix.so

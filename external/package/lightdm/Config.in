@@ -1,0 +1,16 @@
+config BR2_PACKAGE_LIGHTDM
+	bool "lightdm"
+	depends on BR2_PACKAGE_XORG7
+	depends on BR2_PACKAGE_LINUX_PAM
+	select BR2_PACKAGE_LIBGLIB2
+	select BR2_PACKAGE_LIBGCRYPT
+	select BR2_PACKAGE_LIBXCB
+	select BR2_PACKAGE_XLIB_LIBX11
+	select BR2_PACKAGE_XLIB_LIBXDMCP
+	select BR2_PACKAGE_LIBXKLAVIER
+	select BR2_PACKAGE_DBUS
+	help
+	  LightDM: lightweight display manager (graphical login
+	  screen). Needs a greeter, e.g. lightdm-gtk-greeter.
+
+	  https://github.com/canonical/lightdm

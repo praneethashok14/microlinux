@@ -37,17 +37,22 @@ good, delete the partition.
 Logins: `user` / `live`, `root` / `microlinux`. In the live system `user` can
 use `sudo` without a password. Installed systems ask you to set both passwords.
 
+The desktop starts without asking for a password. After logging out (menu →
+Leave → Log out) the login screen (LightDM) appears: log in again with
+`user`'s password. Ctrl+Alt+L locks the screen the same way. Text consoles:
+Ctrl+Alt+F1 to F3, back to the desktop with Ctrl+Alt+F7.
+
 ## Desktop
 
-The menu opens from the **MicroLinux** button, a right-click on the desktop, or
-the Super key. Shortcuts: Super+Enter terminal, Super+E files, Super+W Firefox,
-Alt+Tab, Alt+F4, Ctrl+Alt+Del task manager. Resolution: menu → Display, or
+The menu opens from the button at the left of the panel, the Super (Windows)
+key, or Alt+F1. Shortcuts: Ctrl+Alt+T terminal, Ctrl+Alt+E files, Ctrl+Alt+L
+lock, Alt+Tab, Alt+F4. A laptop touchpad clicks on a tap. Resolution: menu → Display, or
 `ml-display set 1920x1080` (add `ml.res=1920x1080` to the kernel command line to
 set it at boot).
 
 ## Settings
 
-**Settings** (menu → Settings, the tray button, or Super+I; `ml-settings` from a
+**Settings** (menu → Preferences → Settings, or the panel button; `ml-settings` from a
 terminal) covers the common configuration:
 
 | Page | |

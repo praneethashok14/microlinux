@@ -1,7 +1,10 @@
 #!/bin/sh
-# Called by getty on tty1 (getty -n -l). Root shell in recovery mode, else the desktop user.
+# Called by getty on tty1 (getty -n -l). Root shell in recovery mode; with
+# "ml.nox" the desktop user (text console only); else a normal login prompt
+# (the desktop runs on its own console, from LightDM).
 if grep -qw ml.recovery /proc/cmdline; then
 	echo "MicroLinux recovery shell. 'reboot' to restart, 'exit' to log in normally."
 	exec /bin/login -f root
 fi
-exec /bin/login -f user
+grep -qw ml.nox /proc/cmdline && exec /bin/login -f user
+exec /bin/login

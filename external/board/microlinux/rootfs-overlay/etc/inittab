@@ -7,6 +7,7 @@ tty2::respawn:/sbin/getty 38400 tty2
 tty3::respawn:/sbin/getty 38400 tty3
 # serial console (QEMU virt / servers / SBC debug UART); sleeps if absent
 ::respawn:/usr/libexec/ml-serial-getty
+::respawn:/usr/libexec/ml-lightdm
 
 ::ctrlaltdel:/sbin/reboot
 ::shutdown:/etc/init.d/rcK

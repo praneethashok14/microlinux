@@ -13,7 +13,7 @@ python3 "$BR2_EXTERNAL_MICROLINUX_PATH/board/microlinux/repo-split.py" "$T"
 
 # Xorg runs without logind/seatd, so it needs to be setuid root to open the VT.
 # Buildroot's S40xorg would start a root X server on :0 at boot and block the
-# user's desktop session (startx from tty1), so remove it.
+# desktop session (started by LightDM), so remove it.
 chmod 4755 "$T/usr/bin/Xorg"
 rm -f "$T/etc/init.d/S40xorg"
 

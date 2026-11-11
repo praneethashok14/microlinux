@@ -238,6 +238,9 @@ if [ "\$grub_platform" = efi ]; then
 	menuentry "UEFI firmware settings" { fwsetup }
 fi
 G
+# GRUB's built-in config reads the grub.cfg next to the loader (replace the
+# live medium's one copied above)
+[ -n "$ALONG" ] || cp "$CFG" $T/boot/efi/EFI/BOOT/grub.cfg
 if [ -n "$ALONG" ]; then
 	echo "    firmware boot entry 'MicroLinux' -> \\EFI\\microlinux\\$LOADER"
 	for b in $(efibootmgr 2>/dev/null | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\{0,1\} MicroLinux\b.*/\1/p'); do

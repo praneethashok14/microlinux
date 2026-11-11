@@ -2,10 +2,36 @@
   "policies": {
     "DisableAppUpdate": true,
     "DisableTelemetry": true,
+    "DisableFirefoxStudies": true,
+    "DisablePocket": true,
     "DontCheckDefaultBrowser": true,
     "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
     "Homepage": { "URL": "https://duckduckgo.com/", "StartPage": "homepage" },
     "DownloadDirectory": "${home}/Downloads",
-    "Certificates": { "ImportEnterpriseRoots": false }
+    "Certificates": { "ImportEnterpriseRoots": false },
+    "FirefoxHome": {
+      "SponsoredTopSites": false,
+      "Highlights": false,
+      "Pocket": false,
+      "SponsoredPocket": false,
+      "Snippets": false
+    },
+    "UserMessaging": {
+      "ExtensionRecommendations": false,
+      "FeatureRecommendations": false,
+      "UrlbarInterventions": false,
+      "SkipOnboarding": true,
+      "MoreFromMozilla": false,
+      "FirefoxLabs": false
+    },
+    "Preferences": {
+      "browser.aboutwelcome.enabled": { "Value": false, "Status": "default" },
+      "browser.startup.homepage_override.mstone": { "Value": "ignore", "Status": "default" },
+      "browser.ml.enable": { "Value": false, "Status": "default" },
+      "browser.ml.chat.enabled": { "Value": false, "Status": "default" },
+      "browser.tabs.unloadOnLowMemory": { "Value": true, "Status": "default" },
+      "browser.sessionstore.interval": { "Value": 60000, "Status": "default" }
+    }
   }
 }

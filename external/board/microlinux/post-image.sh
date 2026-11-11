@@ -73,10 +73,14 @@ for d in "$B"/pkgroot/*/; do
 	ver=$(sed -n 's/^version=//p' "$d/.mlpkg/info")
 	desc=$(sed -n 's/^description=//p' "$d/.mlpkg/info")
 	case "$name" in
-		firefox) check_deps "$name" "$d" || { echo "firefox: unresolved libraries, fix the defconfig"; exit 1; } ;;
+		firefox) [ -f "$d/libxul.so" ] || { echo "firefox: libxul.so missing (empty build directory? make firefox-bin-dirclean)"; exit 1; }
+			check_deps "$name" "$d" || { echo "firefox: unresolved libraries, fix the defconfig"; exit 1; } ;;
 	esac
-	f="$name-$ver.mlp"
-	mksquashfs "$d" "$P/$f" -comp xz -b 1M -noappend -no-progress -quiet -all-root -mkfs-time 0 -all-time 0 >/dev/null
+	# compress=zstd in .mlpkg/info: faster to read than xz, slightly bigger
+	comp=$(sed -n 's/^compress=//p' "$d/.mlpkg/info"); comp=${comp:-xz}
+	copt=; [ "$comp" = zstd ] && copt="-Xcompression-level 19"
+	f=$(printf '%s' "$name-$ver" | tr -c 'A-Za-z0-9._-' '_').mlp
+	mksquashfs "$d" "$P/$f" -comp "$comp" $copt -b 1M -noappend -no-progress -quiet -all-root -mkfs-time 0 -all-time 0 >/dev/null
 	sha=$(sha256sum "$P/$f" | cut -d' ' -f1)
 	size=$(stat -c %s "$P/$f")
 	echo "$name|$ver|$f|$sha|$size|$desc" >> "$P/INDEX"
@@ -246,6 +250,11 @@ else
 		cp "$f" "$E/$(basename "$f" | tr a-z A-Z)"
 	done
 fi
+# grub.cfg next to the loader, read by GRUB's built-in config (which can only
+# run plain commands): find the live medium and show its menu. ml-install
+# replaces it with the installed system's menu.
+printf '%s\n' 'search --no-floppy --set=root --file /boot/grub/microlinux-live.id' \
+	'set prefix=($root)/boot/grub' 'configfile $prefix/grub.cfg' > "$E/grub.cfg"
 CERT=ENROLL_THIS_KEY_IN_MOK_MANAGER.cer
 
 iso_tree() { # dir with_packages

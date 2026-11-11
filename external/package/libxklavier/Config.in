@@ -1,0 +1,12 @@
+config BR2_PACKAGE_LIBXKLAVIER
+	bool "libxklavier"
+	depends on BR2_PACKAGE_XORG7
+	select BR2_PACKAGE_LIBGLIB2
+	select BR2_PACKAGE_LIBXML2
+	select BR2_PACKAGE_XLIB_LIBX11
+	select BR2_PACKAGE_XLIB_LIBXKBFILE
+	select BR2_PACKAGE_XLIB_LIBXI
+	help
+	  libxklavier: high-level API for X keyboard layouts.
+
+	  https://www.freedesktop.org/wiki/Software/LibXklavier/

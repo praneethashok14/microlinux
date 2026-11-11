@@ -1,0 +1,9 @@
+#!/bin/sh
+# LightDM session wrapper: the login environment, then the user's ~/.xinitrc
+# (keyboard layout, display set-up, LXQt) - the same session as startx.
+[ -f /etc/profile ] && . /etc/profile
+[ -f "$HOME/.profile" ] && . "$HOME/.profile"
+cd "$HOME"
+exec > "$HOME/.xsession.log" 2>&1
+[ -f "$HOME/.xinitrc" ] && exec /bin/sh "$HOME/.xinitrc"
+exec "$@"

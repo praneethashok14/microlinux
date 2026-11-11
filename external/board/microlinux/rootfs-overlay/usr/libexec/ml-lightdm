@@ -1,0 +1,9 @@
+#!/bin/sh
+# Run by init (respawn): the graphical login. Not with the "ml.nox" or
+# "ml.recovery" boot options (text console only).
+if grep -qwE 'ml\.nox|ml\.recovery' /proc/cmdline; then
+	while :; do sleep 86400; done
+fi
+mkdir -p /var/lib/lightdm /var/log/lightdm /run/lightdm
+chown lightdm:lightdm /var/lib/lightdm
+exec /usr/sbin/lightdm

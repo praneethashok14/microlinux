@@ -1,0 +1,8 @@
+config BR2_PACKAGE_LIGHTDM_GTK_GREETER
+	bool "lightdm-gtk-greeter"
+	depends on BR2_PACKAGE_LIGHTDM
+	depends on BR2_PACKAGE_LIBGTK3_X11
+	help
+	  GTK login screen for LightDM.
+
+	  https://github.com/Xubuntu/lightdm-gtk-greeter

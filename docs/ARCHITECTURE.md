@@ -31,8 +31,9 @@ UEFI firmware                                    BIOS (x86_64 only)
                              rcS → S01 syslogd, S02 klogd, S10 udev (eudev, module autoload),
                                    S12 mlpkg (mount packages), S30 dbus, S40 network (DHCP),
                                    S40 bluetoothd, S45 ntp
-                             tty1: autologin → bash → startx → startlxqt (Openbox)
-                             tty2-3: getty, serial: getty on ttyAMA0/ttyS0
+                             vt7: LightDM → autologin → ml-xsession → ~/.xinitrc → startlxqt (Openbox);
+                                  after logging out: the login screen (lightdm-gtk-greeter)
+                             tty1-3: getty, serial: getty on ttyAMA0/ttyS0
 ```
 
 Kernel command-line options (all documented in `grub.cfg` and `initramfs/init`):

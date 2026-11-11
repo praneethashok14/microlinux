@@ -300,8 +300,11 @@ def run_live_tests(args, rep):
     try:
         # 1-2: UEFI boot through GRUB
         try:
-            vm.expect(r"MicroLinux [0-9.]+ \(live desktop\)", 60)
-            rep.check("1", "Boot in QEMU (UEFI firmware -> GRUB menu)", True, "GRUB menu shown on serial console")
+            _, out = vm.expect(r"MicroLinux [0-9.]+ \(live desktop\)", 60)
+            # GRUB's messages before the menu: none expected (e.g. "Unknown command")
+            errs = sorted(set(re.findall(r"Unknown command[^\r\n]*|error: [^\r\n]*", out)))
+            rep.check("1", "Boot in QEMU (UEFI firmware -> GRUB menu, no GRUB errors)", not errs,
+                      "; ".join(errs)[:200] or "GRUB menu shown on serial console, no errors")
             t_grub = time.time() - vm.t0
         except Exception as e:
             rep.check("1", "Boot in QEMU (UEFI firmware -> GRUB menu)", False, str(e)[:200])
@@ -393,7 +396,7 @@ def run_live_tests(args, rep):
         else:
             rep.notes.append(f"package repository tests skipped: {os.path.relpath(repo, ROOT)} not built")
 
-        # 7: graphical environment (started by autologin on tty1)
+        # 7: graphical environment (LightDM logs the live user in at boot)
         rc, out = vm.sh(f"for i in $(seq {60 * SCALE}); do pgrep -x lxqt-panel >/dev/null && break; sleep 1; done; pgrep -l -x X || pgrep -l -x Xorg; pgrep -l -x openbox; pgrep -l -x lxqt-panel; pgrep -l -x pcmanfm-qt; "
                         "su user -c 'DISPLAY=:0 xdpyinfo' | grep -E 'dimensions|depth of root'", 90)
         # xdpyinfo answering proves the X server is up; pcmanfm-qt draws the desktop
@@ -450,6 +453,23 @@ def run_live_tests(args, rep):
                             "su user -c 'curl -sS -fL -o ~/Downloads/SHA256SUMS https://download-installer.cdn.mozilla.net/pub/firefox/releases/153.6.0esr/SHA256SUMS' && "
                             "wc -l < /home/user/Downloads/SHA256SUMS", 120)
             rep.check("8c", "Downloads (to ~/Downloads)", rc == 0 and out.strip().split()[-1].isdigit(), out[-80:])
+
+        # 7f: logging out shows LightDM's login screen; the password logs back in
+        vm.sh("pkill -x lxqt-session")
+        rc, out = vm.sh(f"for i in $(seq {60 * SCALE}); do pgrep -x lightdm-gtk-gre >/dev/null && ! pgrep -x lxqt-panel >/dev/null && break; sleep 1; done; "
+                        "pgrep -l -x lightdm-gtk-gre; pgrep -x lxqt-panel || echo 'session ended'", 90)
+        time.sleep(5 * SCALE)
+        shot = vm.screenshot("login")
+        greeter = "lightdm-gtk-gre" in out and "session ended" in out
+        vm.qmp_cmd("send-key", keys=[{"type": "qcode", "data": "ctrl"}, {"type": "qcode", "data": "a"}])
+        for k in "live":
+            vm.qmp_cmd("send-key", keys=[{"type": "qcode", "data": k}])
+            time.sleep(0.2)
+        vm.qmp_cmd("send-key", keys=[{"type": "qcode", "data": "ret"}])
+        rc, out2 = vm.sh(f"for i in $(seq {60 * SCALE}); do pgrep -x lxqt-panel >/dev/null && break; sleep 1; done; pgrep -l -x lxqt-panel; pgrep -l -x openbox", 90)
+        rep.check("7f", "Log out shows the login screen (LightDM), password logs back in",
+                  greeter and "lxqt-panel" in out2 and "openbox" in out2,
+                  (out + "; " + out2).replace("\n", "; ")[:200] + f" - screenshot {os.path.basename(shot)}")
 
         # 9-10: ELF / EL7 compatibility
         rc, out = vm.sh("elfcheck /opt/el7/usr/bin/tree /opt/el7/usr/bin/bash | grep -E 'verdict|needs glibc'; /opt/el7/usr/bin/tree --version", 30)

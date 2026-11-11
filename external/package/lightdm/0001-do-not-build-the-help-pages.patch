@@ -1,0 +1,13 @@
+The help pages need itstool and yelp, and are never shown on MicroLinux.
+
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -406,7 +406,7 @@
+ top_srcdir = @top_srcdir@
+ ACLOCAL_AMFLAGS = -I m4
+ SUBDIRS = common liblightdm-gobject liblightdm-qt $(am__append_1) data \
+-	po src doc help
++	po src doc
+ DISTCHECK_CONFIGURE_FLAGS = --enable-introspection --enable-gtk-doc
+ EXTRA_DIST = \
+ 	autogen.sh \
