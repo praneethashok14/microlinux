@@ -51,6 +51,23 @@ fakeroot -- sh -c "mknod -m 600 '$I/dev/console' c 5 1 && cd '$I' && find . | LC
 	| gzip -9 -n > "$B/initramfs.cpio.gz"
 
 # --- 2. mlpkg packages ------------------------------------------------------------
+# mksq TREE IMAGE MKSQUASHFS-OPTIONS...: the images are reproducible (fixed
+# times, root owner), so a tree with the same contents as in the previous
+# build reuses that build's image instead of compressing it again
+SQC="$B/squashfs-cache"; mkdir -p "$SQC"
+mksq() {
+	local d=$1 out=$2 key name; shift 2
+	key=$( { echo "$*"; cd "$d" && find . -printf '%y %m %p %l\n' | LC_ALL=C sort &&
+		find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum; } | sha256sum | cut -c1-32)
+	name=${out##*/}
+	if [ -f "$SQC/$name.$key" ]; then
+		cp "$SQC/$name.$key" "$out"
+		return
+	fi
+	mksquashfs "$d" "$out" "$@" -noappend -no-progress -quiet -all-root -mkfs-time 0 -all-time 0 >/dev/null
+	rm -f "$SQC/$name".*
+	cp "$out" "$SQC/$name.$key"
+}
 msg "packages"
 P="$B/packages"; rm -rf "$P"; mkdir -p "$P"
 : > "$P/INDEX"
@@ -80,7 +97,7 @@ for d in "$B"/pkgroot/*/; do
 	comp=$(sed -n 's/^compress=//p' "$d/.mlpkg/info"); comp=${comp:-xz}
 	copt=; [ "$comp" = zstd ] && copt="-Xcompression-level 19"
 	f=$(printf '%s' "$name-$ver" | tr -c 'A-Za-z0-9._-' '_').mlp
-	mksquashfs "$d" "$P/$f" -comp "$comp" $copt -b 1M -noappend -no-progress -quiet -all-root -mkfs-time 0 -all-time 0 >/dev/null
+	mksq "$d" "$P/$f" -comp "$comp" $copt -b 1M
 	sha=$(sha256sum "$P/$f" | cut -d' ' -f1)
 	size=$(stat -c %s "$P/$f")
 	echo "$name|$ver|$f|$sha|$size|$desc" >> "$P/INDEX"
@@ -118,7 +135,7 @@ for d in "$B"/repo-root/*/; do
 	done < <(find "$d" -type f \( -perm -u+x -o -name '*.so*' \) -exec sh -c 'head -c4 "$1" | grep -q ELF' _ {} \; -print)
 	# GitHub release asset names allow only these characters
 	f=$(printf '%s' "$name-$ver" | tr -c 'A-Za-z0-9._-' '_').mlp
-	mksquashfs "$d" "$R/$f" -comp xz -noappend -no-progress -quiet -all-root -mkfs-time 0 -all-time 0 >/dev/null
+	mksq "$d" "$R/$f" -comp xz
 	echo "$name|$ver|$f|$(sha256sum "$R/$f" | cut -d' ' -f1)|$(stat -c %s "$R/$f")|$desc|$dep|$sec" >> "$R/INDEX"
 done
 [ $bad = 0 ] || { echo "repository packages have unresolved libraries"; exit 1; }
@@ -159,7 +176,7 @@ for d in "$B"/pkgroot-repo/*/; do
 	done < <(find "$d" -type f \( -perm -u+x -o -name '*.so*' \) -exec sh -c 'head -c4 "$1" | grep -q ELF' _ {} \; -print)
 	[ $bad = 0 ] || { echo "$name: unresolved libraries"; exit 1; }
 	f=$(printf '%s' "$name-$ver" | tr -c 'A-Za-z0-9._-' '_').mlp
-	mksquashfs "$d" "$R/$f" -comp xz -b 1M -noappend -no-progress -quiet -all-root -mkfs-time 0 -all-time 0 >/dev/null
+	mksq "$d" "$R/$f" -comp xz -b 1M
 	echo "$name|$ver|$f|$(sha256sum "$R/$f" | cut -d' ' -f1)|$(stat -c %s "$R/$f")|$desc|$dep|app" >> "$R/INDEX"
 	echo "$name|${cat:-Other}" >> "$R/CATEGORIES"
 	msg "  $f ($(( $(stat -c %s "$R/$f") / 1048576 )) MiB, repository only; needs: ${dep:-nothing})"
@@ -301,8 +318,16 @@ mkiso "$B/microlinux-$ARCH.iso" "$B/iso-full"
 iso_tree "$B/iso-base" no
 mkiso "$B/microlinux-$ARCH-base.iso" "$B/iso-base"
 
-# checksums of the images, signed with the GPG release key
-( cd "$B" && sha256sum "microlinux-$ARCH.iso" "microlinux-$ARCH-base.iso" > "SHA256SUMS-$ARCH" )
+# checksums of the images and the build ID (BUILD-<arch>, for mlpkg
+# system-update), signed with the GPG release key and with the repository key
+# (SHA256SUMS-<arch>.sig, which MicroLinux itself can check with openssl)
+cp "$T/etc/microlinux-build" "$B/BUILD-$ARCH"
+( cd "$B" && sha256sum "microlinux-$ARCH.iso" "microlinux-$ARCH-base.iso" "BUILD-$ARCH" > "SHA256SUMS-$ARCH" )
+rm -f "$B/SHA256SUMS-$ARCH.sig"
+if [ -f "$KEYS/repo/repo.key" ]; then
+	openssl dgst -sha256 -sign "$KEYS/repo/repo.key" -out "$B/SHA256SUMS-$ARCH.sig" "$B/SHA256SUMS-$ARCH"
+	openssl dgst -sha256 -verify "$BOARD/keys/repo.pub" -signature "$B/SHA256SUMS-$ARCH.sig" "$B/SHA256SUMS-$ARCH" >/dev/null
+fi
 rm -f "$B/SHA256SUMS-$ARCH.asc"
 if [ -d "$KEYS/gpg" ]; then
 	GNUPGHOME="$KEYS/gpg" gpg --batch --quiet --armor --detach-sign --output "$B/SHA256SUMS-$ARCH.asc" "$B/SHA256SUMS-$ARCH"

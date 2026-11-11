@@ -56,6 +56,8 @@ PRETTY_NAME="MicroLinux $VERSION ($ARCH)"
 HOME_URL="https://example.invalid/microlinux"
 EOR
 echo "$VERSION" > "$T/etc/microlinux-release"
+# which build this is (scripts/build.sh sets ML_BUILD_ID); mlpkg system-update compares it
+echo "${ML_BUILD_ID:-$(date -u +%Y%m%d.%H%M)-local}" > "$T/etc/microlinux-build"
 ln -sf ../usr/lib/os-release "$T/etc/os-release"
 
 # login banner

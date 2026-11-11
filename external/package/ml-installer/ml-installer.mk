@@ -18,12 +18,17 @@ ML_INSTALLER_DEPENDENCIES = xlib_libX11 xlib_libXcursor xlib_libXi \
 # after copying the source: with per-package directories, host-rustc's cargo
 # is only in this package's host directory from the configure step on.
 define ML_INSTALLER_VENDOR_CRATES
-	mkdir -p $(@D)/.cargo $(HOST_DIR)/share/cargo
-	cd $(@D) && CARGO_HOME=$(HOST_DIR)/share/cargo \
-		flock $(HOST_DIR)/share/cargo/.br-lock \
+	mkdir -p $(@D)/.cargo $(BR_CARGO_HOME)
+	cd $(@D) && CARGO_HOME=$(BR_CARGO_HOME) \
+		flock $(BR_CARGO_HOME)/.br-lock \
 		$(HOST_DIR)/bin/cargo vendor --locked VENDOR > $(@D)/.cargo/config.toml
 endef
 ML_INSTALLER_PRE_CONFIGURE_HOOKS += ML_INSTALLER_VENDOR_CRATES
+
+# one target directory for "cargo build" and "cargo install" (else install
+# compiles everything again), outside the build directory so that it survives
+# rebuilds: only what changed is compiled again
+ML_INSTALLER_CARGO_ENV = CARGO_TARGET_DIR=$(BUILD_DIR)/ml-installer-cargo-target
 
 define ML_INSTALLER_INSTALL_DESKTOP_FILE
 	$(INSTALL) -D -m 0644 $(@D)/ml-installer.desktop \

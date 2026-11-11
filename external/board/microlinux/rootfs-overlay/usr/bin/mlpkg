@@ -48,6 +48,10 @@ usage: mlpkg <command> [args]
   activate <name>        mount an installed package
   deactivate <name>      unmount a package
   activate-all           mount all installed packages (+ live-medium autoload)
+  system-update [--check] [-y]
+                         update MicroLinux itself to the newest release on GitHub
+                         (installed systems; your files and packages are kept),
+                         then upgrade the packages
 EOF
 }
 
@@ -507,6 +511,7 @@ case "$CMD" in
 	activate)     need_root; [ -f "$LIB/$1.mlp" ] || die "$1 is not installed"; activate "$1" "$LIB/$1.mlp" ;;
 	deactivate)   need_root; deactivate "$1" ;;
 	activate-all) need_root; cmd_activate_all ;;
+	system-update) need_root; exec /usr/libexec/ml-system-update "$@" ;;
 	-h|--help|help|"") usage ;;
 	*) usage; exit 1 ;;
 esac

@@ -253,9 +253,11 @@ def run_persist_tests(args, rep):
             login(vm, timeout=180)
             rc, out = vm.sh("cat /home/user/persist-marker; findmnt -no SOURCE,FSTYPE /live/cow; "
                             "[ -d /sys/firmware/efi ] && echo firmware=UEFI || echo firmware=BIOS")
-            rep.check(num, f"Changes kept after reboot from the stick ({fw})",
-                      marker.startswith("kept-") and marker in out and "ext4" in out and f"firmware={fw}" in out,
-                      out.replace("\n", "; ")[:200])
+            ok = marker.startswith("kept-") and marker in out and "ext4" in out and f"firmware={fw}" in out
+            rep.check(num, f"Changes kept after reboot from the stick ({fw})", ok, out.replace("\n", "; ")[:200])
+            if not ok:   # keep the reason in the report
+                rc, out = vm.sh("blkid; dmesg | grep -i -E 'sd[a-z]|ext4|initramfs|persist' | tail -n 25", 60)
+                rep.notes.append(f"{num} failed - blkid and kernel messages:\n```\n" + out.strip() + "\n```")
         except Exception as e:
             rep.check(num, f"Changes kept after reboot from the stick ({fw})", False, str(e)[:200])
         vm.stop()
@@ -493,7 +495,7 @@ def run_live_tests(args, rep):
             rep.check("I0", "Installer disk probe (ml-install --probe, as the GUI runs it)",
                       rc == 0 and "size_mib=8192" in out and "free_mib=" in out, out.replace("\n", "; ")[:200])
             # the passwords as the GUI passes them; I2 logs in with them
-            rc, out = vm.sh("printf 'root:microlinux\\nuser:live\\n' | ml-install -y --passwords-stdin --hostname mltest /dev/vda 2>&1 | tail -n 4", 300)
+            rc, out = vm.sh("printf 'root:microlinux\\nuser:live\\n' | ml-install -y --passwords-stdin --hostname mltest --user tester --fullname 'Test User' /dev/vda 2>&1 | tail -n 4", 300)
             rep.check("I1", "ml-install to virtio disk (GPT, ESP + ext4)", rc == 0 and "Done." in out, out.replace("\n", "; ")[:200])
     except Exception as e:
         rep.check("X", "test harness", False, f"{type(e).__name__}: {e}"[:300])
@@ -507,11 +509,15 @@ def run_installed_tests(args, rep, num, bios=False):
     try:
         login(vm, timeout=180)
         rc, out = vm.sh("findmnt -no SOURCE,FSTYPE /; hostname; [ -d /sys/firmware/efi ] && echo firmware=UEFI || echo firmware=BIOS; "
-                        "mlpkg list -i | tail -n +2 | awk '{print $1}' | tr '\\n' ' '")
-        rep.check(num, name, "ext4" in out and "mltest" in out and ("firmware=BIOS" if bios else "firmware=UEFI") in out,
+                        "mlpkg list -i | tail -n +2 | awk '{print $1}' | tr '\\n' ' '; "
+                        f"grep ^tester: /etc/passwd | cut -d: -f5,6; for i in $(seq {60 * SCALE}); do pgrep -u tester -x lxqt-panel >/dev/null && break; sleep 1; done; "
+                        "pgrep -u tester -l -x lxqt-panel")
+        # the account chosen at installation (ml-install --user) has the desktop
+        rep.check(num, name, "ext4" in out and "mltest" in out and ("firmware=BIOS" if bios else "firmware=UEFI") in out
+                  and "Test User:/home/tester" in out and "lxqt-panel" in out,
                   out.replace("\n", "; "))
         # shut down as the desktop user would (menu: sudo poweroff, no terminal, no password)
-        vm.send("su user -c 'sudo -n poweroff' </dev/null\n")
+        vm.send("su tester -c 'sudo -n poweroff' </dev/null\n")
         t0 = time.time()
         while vm.proc.poll() is None and time.time() - t0 < 60 * SCALE:
             vm._read()
@@ -522,6 +528,58 @@ def run_installed_tests(args, rep, num, bios=False):
     except Exception as e:
         rep.check(num, name, False, str(e)[:200])
     return vm
+
+
+def run_system_update_test(args, rep):
+    """mlpkg system-update on the installed disk, with out/ served as the GitHub release."""
+    disk = os.path.join(RUN, "disk.qcow2")
+    out_dir = os.path.join(ROOT, "out")
+    repo = os.path.join(os.path.dirname(ROOT), "microlinux-repo", ARCH)
+    need = [os.path.join(out_dir, f) for f in (f"BUILD-{ARCH}", f"SHA256SUMS-{ARCH}", f"SHA256SUMS-{ARCH}.sig", f"microlinux-{ARCH}-base.iso")]
+    missing = [os.path.relpath(f, ROOT) for f in need + [os.path.join(repo, "INDEX")] if not os.path.exists(f)]
+    if missing:
+        rep.notes.append("system update test skipped: missing " + ", ".join(missing))
+        return
+    build = open(os.path.join(out_dir, f"BUILD-{ARCH}")).read().strip()
+    servers, urls = [], []
+    for d in (out_dir, repo):   # the release (out/) and this build's package repository
+        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=d)
+        servers.append(http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler))
+        threading.Thread(target=servers[-1].serve_forever, daemon=True).start()
+        urls.append(f"http://10.0.2.2:{servers[-1].server_address[1]}")
+    url, repo_url = urls
+    media = ["-drive", f"if=none,id=hd,file={disk},format=qcow2", "-device", "virtio-blk-pci,drive=hd"]
+    vm = VM(media)
+    try:
+        login(vm, timeout=180)
+        # this build's packages as the repository: nothing to upgrade, no internet needed
+        rc, out = vm.sh(f"sed -i 's|^url=.*|url={url}|' /etc/mlpkg/system-update.conf; "
+                        f"echo '{repo_url} unsigned' > /etc/mlpkg/repos.conf; "
+                        "mlpkg system-update --check 2>&1 | tail -n 3", 120)
+        rep.check("U1", "System update check (signed release info, newest build found)",
+                  f"newest:    {build}" in out and ("up to date" in out or "update is available" in out), out.replace("\n", "; ")[-200:])
+        # pretend to be an older build that lacks a file, has an obsolete one, and has user data
+        rc, out = vm.sh("echo 20000101.0000-old > /etc/microlinux-build; rm /usr/bin/ml-sysinfo; "
+                        "touch /usr/share/ml-obsolete; echo /usr/share/ml-obsolete >> /var/lib/mlpkg/system.files; "
+                        "echo mine > /home/tester/keep.txt; "
+                        "mlpkg system-update -y 2>&1 | grep -E '==>|changed|removed|added|updated|WARNING|system-update:' | tail -n 12; "
+                        "echo build=$(cat /etc/microlinux-build); ls /usr/bin/ml-sysinfo; ls /usr/share/ml-obsolete 2>&1 | grep -c 'No such'; "
+                        "cat /home/tester/keep.txt; hostname; echo liveuser=$(grep -c '^user:' /etc/passwd); sync", 1200)
+        # (the live system's account "user" must not come back next to the renamed one)
+        ok = ("liveuser=0" in out and f"build={build}" in out and "/usr/bin/ml-sysinfo" in out and "mine" in out and "mltest" in out
+              and "\n1\n" in "\n" + out + "\n")
+        rep.check("U2", "System update (mlpkg system-update): files updated, obsolete removed, user data and settings kept",
+                  ok, out.replace("\n", "; ")[-300:])
+        vm.stop()
+        vm = VM(media)
+        login(vm, timeout=180)
+        rc, out = vm.sh(f"cat /etc/microlinux-build; for i in $(seq {60 * SCALE}); do pgrep -u tester -x lxqt-panel >/dev/null && break; sleep 1; done; pgrep -u tester -l -x lxqt-panel", 120)
+        rep.check("U3", "Updated system boots to the desktop", build in out and "lxqt-panel" in out, out.replace("\n", "; ")[:200])
+    except Exception as e:
+        rep.check("U", "system update test", False, f"{type(e).__name__}: {e}"[:300])
+    for srv in servers:
+        srv.shutdown()
+    vm.stop()
 
 
 def main():
@@ -553,6 +611,7 @@ def main():
     run_persist_tests(args, rep)
     if args.install and any(r[0] == "I1" and r[2] == "PASS" for r in rep.rows):
         run_installed_tests(args, rep, "I2").stop()
+        run_system_update_test(args, rep)
         if ARCH == "x86_64":
             run_installed_tests(args, rep, "I3", bios=True).stop()
     sys.exit(0 if rep.write(args.iso) else 1)

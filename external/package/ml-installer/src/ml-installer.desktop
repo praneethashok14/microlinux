@@ -4,5 +4,7 @@ Name=Install MicroLinux
 Comment=Install MicroLinux on a disk, alone or next to Windows
 Icon=drive-harddisk
 Exec=ml-installer
+# shown only in the live system: /live/rootfs is its read-only system image
+TryExec=/live/rootfs/usr/bin/ml-installer
 Terminal=false
 Categories=System;

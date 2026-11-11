@@ -1453,6 +1453,11 @@ static void about_install(GtkButton *b, gpointer d)
 	g_spawn_async(NULL, (char **)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
 }
 
+static void about_update(GtkButton *b, gpointer d)
+{
+	run_in_terminal("Update MicroLinux", "sudo mlpkg system-update; echo; printf 'Press Enter to close'; read x");
+}
+
 static void about_persist(GtkButton *b, gpointer d)
 {
 	run_in_terminal("Keep changes on USB", "sudo ml-persist; echo; printf 'Press Enter to close'; read x");
@@ -1501,6 +1506,8 @@ static GtkWidget *page_about(void)
 	if (live) {
 		add_button(bb, "_Install to disk ...", G_CALLBACK(about_install), NULL);
 		add_button(bb, "_Keep changes on USB ...", G_CALLBACK(about_persist), NULL);
+	} else {
+		add_button(bb, "_Update system ...", G_CALLBACK(about_update), NULL);
 	}
 	add_button(bb, "System _log", G_CALLBACK(about_log), NULL);
 	return page;

@@ -28,8 +28,10 @@ fi
 limactl list -q 2>/dev/null | grep -qx "$VM" || { echo "Lima VM '$VM' missing - see docs/BUILD.md"; exit 1; }
 [ "$(limactl list --format '{{.Status}}' "$VM")" = Running ] || limactl start "$VM"
 ./scripts/gen-defconfigs.sh
+# build ID (/etc/microlinux-build, BUILD-<arch>): what "mlpkg system-update" compares
+ML_BUILD_ID="$(date -u +%Y%m%d.%H%M)-$(git rev-parse --short HEAD 2>/dev/null || echo nogit)$(git diff --quiet HEAD 2>/dev/null || echo +)"
 
-limactl shell "$VM" env SRC="$SRC" ARCHES="$ARCHES" TARGET="$*" bash -s <<'VMEOF'
+limactl shell "$VM" env SRC="$SRC" ARCHES="$ARCHES" TARGET="$*" ML_BUILD_ID="$ML_BUILD_ID" bash -s <<'VMEOF'
 set -e
 W=/mnt/lima-mlbuild
 BR=$W/buildroot
@@ -59,15 +61,20 @@ for A in $ARCHES; do
 	# renamed or removed overlay files and moved repository files can't linger.
 	rm -rf "${O:?}/target"
 	# Buildroot copies a local-source package once and doesn't notice later
-	# changes: rebuild ours every time (seconds)
-	make O="$O" ml-settings-dirclean ml-software-dirclean ml-installer-dirclean >/dev/null
+	# changes: rebuild ours when their source changed
+	for p in ml-settings ml-software ml-installer; do
+		h=$(cd "$W/src/external/package/$p" && find . -type f -exec sha256sum {} + | LC_ALL=C sort | sha256sum | cut -c1-16)
+		[ "$(cat "$O/.ml-src-$p" 2>/dev/null)" = "$h" ] && continue
+		make O="$O" "$p-dirclean" >/dev/null
+		echo "$h" > "$O/.ml-src-$p"
+	done
 	set -o pipefail
 	if ! make -j"$(nproc)" O="$O" 2>&1 | tee "$O/build.log" | { grep --line-buffered -E '^>>>|Error|error:' || true; }; then
 		echo "BUILD FAILED ($A) - see $O/build.log"; tail -40 "$O/build.log"; exit 1
 	fi
 	mkdir -p "$SRC/out"
 	# copy then rename, so a VM still running the previous ISO keeps its (old) file
-	for f in microlinux-$A.iso microlinux-$A-base.iso size-report.txt SHA256SUMS-$A SHA256SUMS-$A.asc; do
+	for f in microlinux-$A.iso microlinux-$A-base.iso size-report.txt SHA256SUMS-$A SHA256SUMS-$A.asc SHA256SUMS-$A.sig BUILD-$A; do
 		[ -f "$O/images/$f" ] || continue
 		dst=$f; [ "$f" = size-report.txt ] && dst=size-report-$A.txt
 		cp "$O/images/$f" "$SRC/out/.$dst.new" && mv -f "$SRC/out/.$dst.new" "$SRC/out/$dst"

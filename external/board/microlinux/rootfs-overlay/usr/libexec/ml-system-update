@@ -1,0 +1,211 @@
+#!/bin/sh
+# ml-system-update - update an installed MicroLinux to the newest release
+# (run as "sudo mlpkg system-update [--check] [-y]")
+#
+# The newest release on GitHub (url= in /etc/mlpkg/system-update.conf) names
+# its build in BUILD-<arch> and lists checksums in SHA256SUMS-<arch>, signed
+# with the repository key (SHA256SUMS-<arch>.sig). If that build differs from
+# /etc/microlinux-build, the base ISO is downloaded, checked, and the system
+# files are replaced from it: each file is written next to the old one and
+# renamed over it, so running programs keep working until the restart.
+#
+# Kept as they are: /home, /root, /var, /opt, /usr/local, the users and
+# passwords, host name, fstab, sudo rules, Wi-Fi and repository settings, and
+# every file of a package installed with mlpkg. System users that the new
+# release adds (e.g. for a new service) are added. Files the old system had
+# (/var/lib/mlpkg/system.files) and the new one doesn't are removed. Then the
+# kernel and the boot loader are updated, and "mlpkg upgrade" updates the
+# packages (also when the system itself is up to date).
+set -e
+CONF=/etc/mlpkg/system-update.conf
+KEY=/usr/share/microlinux/keys/repo.pub
+LIB=/var/lib/mlpkg
+LIST=$LIB/system.files
+# on the disk (/var/cache is /tmp, in RAM)
+WORK=/var/lib/mlpkg/system-update
+ARCH=$(uname -m)
+CHECK=; YES=
+die() { echo "mlpkg system-update: $*" >&2; exit 1; }
+for a in "$@"; do
+	case "$a" in
+		--check) CHECK=1 ;;
+		-y) YES=1 ;;
+		*) die "unknown option: $a (usage: mlpkg system-update [--check] [-y])" ;;
+	esac
+done
+[ "$(id -u)" = 0 ] || die "run as root: sudo mlpkg system-update"
+URL=$(sed -n 's/^url=//p' "$CONF" 2>/dev/null)
+[ -n "$URL" ] || die "no url= in $CONF"
+if [ -d /live/rootfs/usr ]; then
+	echo "This is the live system: it can't replace itself. Download the newest ISO from"
+	echo "  ${URL%/download}"
+	echo "and write it to the USB stick, or install MicroLinux to a disk (Install MicroLinux)."
+	exit 1
+fi
+
+# paths an update never touches (anchored, relative to /)
+KEEP='^/(home|root|var|opt|usr/local|boot|mnt|media|srv|tmp|run|proc|sys|dev|lost\+found|live)(/|$)|^/etc/(passwd|passwd-|group|group-|shadow|shadow-|gshadow|gshadow-|hostname|hosts|fstab|sudoers|sudoers\.d/90-live|default/syslogd|mlpkg/repos\.conf|localtime|timezone|machine-id|resolv\.conf|adjtime|microlinux-build|wpa_supplicant/.*|ssh/ssh_host_.*)$'
+
+ISO=$WORK/iso; NEW=$WORK/root
+# lines of the input that are not in FILE (busybox has no comm; grep -f is slow)
+# (FILENAME, not NR == FNR: that is also true for the input when FILE is empty)
+not_in() { awk -v f="$1" 'FILENAME == f { s[$0] = 1; next } !($0 in s)' "$1" -; }
+cleanup() {
+	mountpoint -q "$NEW" 2>/dev/null && umount "$NEW"
+	mountpoint -q "$ISO" 2>/dev/null && umount "$ISO"
+	return 0
+}
+trap cleanup EXIT
+cleanup
+mkdir -p "$WORK"
+cd "$WORK"
+get() { curl -fsSL --retry 3 -o "$2" "$URL/$1" || die "download failed: $URL/$1"; }
+
+echo "==> checking for a new release"
+get "SHA256SUMS-$ARCH" SHA256SUMS
+get "SHA256SUMS-$ARCH.sig" SHA256SUMS.sig
+openssl dgst -sha256 -verify "$KEY" -signature SHA256SUMS.sig SHA256SUMS >/dev/null 2>&1 ||
+	die "SHA256SUMS-$ARCH: the signature does not match (not a MicroLinux release?)"
+want() { awk -v f="$1" '$2 == f || $2 == "*" f { print $1 }' SHA256SUMS; }
+get "BUILD-$ARCH" BUILD
+[ "$(sha256sum BUILD | cut -d' ' -f1)" = "$(want "BUILD-$ARCH")" ] || die "BUILD-$ARCH: checksum mismatch"
+new=$(cat BUILD)
+cur=$(cat /etc/microlinux-build 2>/dev/null || echo "unknown (installed before system updates existed)")
+echo "    installed: $cur"
+echo "    newest:    $new"
+
+if [ "$new" = "$cur" ]; then
+	echo "The system is up to date."
+	if [ -n "$CHECK" ]; then exit 0; fi
+else
+	if [ -n "$CHECK" ]; then
+		echo "An update is available: sudo mlpkg system-update"
+		exit 0
+	fi
+	iso=microlinux-$ARCH-base.iso
+	# the ISO (at most ~300 MiB) and room for the files while they are replaced
+	for d in "$WORK" /usr; do
+		free=$(df -m "$d" | awk 'NR == 2 { print $4 }')
+		[ "${free:-0}" -ge 600 ] || die "not enough free space on $d (${free} MiB, need 600 MiB)"
+	done
+	if [ -z "$YES" ]; then
+		echo
+		echo "This downloads the new system (about 300 MB) and replaces the installed one."
+		echo "Your files, settings, passwords and installed packages are kept."
+		printf "Continue? [y/N] "; read -r ans
+		case "$ans" in y|Y|yes|YES) ;; *) die "cancelled" ;; esac
+	fi
+
+	echo "==> downloading $iso"
+	[ -f "$iso" ] && [ "$(sha256sum "$iso" | cut -d' ' -f1)" = "$(want "$iso")" ] ||
+		curl -fL --retry 3 --progress-bar -o "$iso" "$URL/$iso" || die "download failed: $URL/$iso"
+	[ "$(sha256sum "$iso" | cut -d' ' -f1)" = "$(want "$iso")" ] || { rm -f "$iso"; die "$iso: checksum mismatch"; }
+	mkdir -p "$ISO" "$NEW"
+	mount -o loop,ro "$iso" "$ISO"
+	mount -t squashfs -o loop,ro "$ISO/live/rootfs.sqfs" "$NEW"
+	[ "$(cat "$NEW/etc/microlinux-build" 2>/dev/null)" = "$new" ] || die "$iso does not contain build $new"
+
+	echo "==> updating system files"
+	cat "$LIB"/installed/*.files 2>/dev/null | sort -u > owned.files
+	( cd "$NEW" && find . ! -type d | sed 's|^\.||' ) | sort > new.files
+	grep -Ev "$KEEP" new.files | not_in owned.files > copy.list || true
+	total=$(wc -l < copy.list); n=0; changed=0; failed=0
+	while IFS= read -r f; do
+		n=$((n + 1))
+		[ $((n % 2000)) -ne 0 ] || echo "    $n / $total"
+		src=$NEW$f
+		if [ -L "$src" ]; then
+			[ -L "$f" ] && [ "$(readlink "$f")" = "$(readlink "$src")" ] && continue
+		elif [ -f "$f" ] && [ ! -L "$f" ] && cmp -s "$src" "$f"; then
+			continue
+		fi
+		mkdir -p "${f%/*}"
+		if cp -a "$src" "$f.ml-new" 2>/dev/null && mv -f "$f.ml-new" "$f" 2>/dev/null; then
+			changed=$((changed + 1))
+		else
+			rm -f "$f.ml-new"; failed=$((failed + 1)); echo "    could not replace $f"
+		fi
+	done < copy.list
+	echo "    $changed of $total files changed"
+
+	# system users and groups that are new in this release; not the live
+	# system's desktop account "user" (an installed system has its own, maybe
+	# renamed); a UID or GID that is taken here gets the lowest free one
+	free_id() { awk -F: '{ used[$3] = 1 } END { for (i = 100; i in used; i++); print i }' "$1"; }
+	taken() { awk -F: -v id="$2" '$3 == id { f = 1 } END { exit !f }' "$1"; }
+	added=
+	while IFS=: read -r name pw gid members; do
+		[ "$name" = user ] || grep -q "^$name:" /etc/group && continue
+		taken /etc/group "$gid" && gid=$(free_id /etc/group)
+		echo "$name:$pw:$gid:" >> /etc/group
+		[ ! -f /etc/gshadow ] || echo "$name:!::" >> /etc/gshadow
+		added="$added group:$name"
+	done < "$NEW/etc/group"
+	while IFS=: read -r name pw uid gid gecos home shell; do
+		[ "$name" = user ] || grep -q "^$name:" /etc/passwd && continue
+		taken /etc/passwd "$uid" && uid=$(free_id /etc/passwd)
+		# the primary group by name: its GID can differ on this system
+		g=$(awk -F: -v id="$gid" '$3 == id { print $1; exit }' "$NEW/etc/group")
+		[ -z "$g" ] || gid=$(awk -F: -v n="$g" '$1 == n { print $3; exit }' /etc/group)
+		echo "$name:$pw:$uid:$gid:$gecos:$home:$shell" >> /etc/passwd
+		echo "$name:*:::::::" >> /etc/shadow   # a system account: no password
+		added="$added $name"
+	done < "$NEW/etc/passwd"
+	[ -z "$added" ] || echo "    new system accounts:$added"
+
+	# files of the old system that the new one doesn't have; the running
+	# kernel's modules stay until the next update after the restart
+	if [ -f "$LIST" ]; then
+		running="^/usr/lib/modules/$(uname -r)/"
+		for f in $(cat "$LIB/system.stale" 2>/dev/null); do
+			echo "$f" | grep -q "$running" || rm -f "$f"
+		done
+		not_in new.files < "$LIST" | grep -Ev "$KEEP" | not_in owned.files > gone.list || true
+		grep "$running" gone.list > "$LIB/system.stale" || true
+		removed=0
+		while IFS= read -r f; do
+			echo "$f" | grep -q "$running" && continue
+			[ -d "$f" ] && [ ! -L "$f" ] && continue
+			rm -f "$f" && removed=$((removed + 1))
+		done < gone.list
+		echo "    $removed old files removed"
+	fi
+	cp new.files "$LIST"
+
+	echo "==> updating kernel and boot loader"
+	mountpoint -q /boot/efi || mount /boot/efi 2>/dev/null || true
+	replace() { cp "$1" "$2.ml-new" && mv -f "$2.ml-new" "$2"; }
+	if [ -f /boot/efi/boot/vmlinuz ]; then        # whole disk: kernel on the EFI partition
+		KDIR=/boot/efi/boot; LDIR=/boot/efi/EFI/BOOT; ALONG=
+	elif [ -f /boot/vmlinuz ]; then               # dual boot: kernel on the root partition
+		KDIR=/boot; LDIR=/boot/efi/EFI/microlinux; ALONG=1
+	else
+		die "kernel not found in /boot/efi/boot or /boot: the system files are updated, the kernel is not"
+	fi
+	replace "$ISO/boot/vmlinuz" "$KDIR/vmlinuz"
+	replace "$ISO/boot/initramfs.cpio.gz" "$KDIR/initramfs.cpio.gz"
+	if [ -d "$LDIR" ]; then
+		for f in "$ISO"/EFI/BOOT/*; do
+			b=${f##*/}
+			case "$b" in grub.cfg) continue ;; esac   # the live medium's menu
+			if [ -n "$ALONG" ]; then
+				case "$b" in BOOTX64.EFI) b=shimx64.efi ;; BOOTAA64.EFI) b=grubaa64.efi ;; esac
+			fi
+			replace "$f" "$LDIR/$b"
+		done
+		# the boot loader reads the grub.cfg next to it
+		[ -n "$ALONG" ] || [ ! -f /boot/efi/boot/grub/grub.cfg ] ||
+			replace /boot/efi/boot/grub/grub.cfg "$LDIR/grub.cfg"
+	fi
+	sync
+	cp BUILD /etc/microlinux-build
+	cleanup
+	rm -rf "${WORK:?}"/iso "${WORK:?}"/root "${WORK:?}"/*.iso
+	[ "$failed" = 0 ] || echo "WARNING: $failed files could not be replaced (listed above)"
+	echo "MicroLinux is updated to build $new."
+fi
+
+echo "==> updating packages"
+mlpkg update && mlpkg upgrade
+sync
+[ "$new" = "$cur" ] || echo "Restart to start the new system: sudo reboot"

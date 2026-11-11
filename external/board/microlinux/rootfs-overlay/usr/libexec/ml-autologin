@@ -6,5 +6,7 @@ if grep -qw ml.recovery /proc/cmdline; then
 	echo "MicroLinux recovery shell. 'reboot' to restart, 'exit' to log in normally."
 	exec /bin/login -f root
 fi
-grep -qw ml.nox /proc/cmdline && exec /bin/login -f user
+# the desktop user: the one LightDM logs in automatically (renamed by ml-install)
+u=$(cat /etc/lightdm/lightdm.conf.d/*.conf 2>/dev/null | sed -n 's/^autologin-user=//p' | tail -n 1)
+grep -qw ml.nox /proc/cmdline && exec /bin/login -f "${u:-user}"
 exec /bin/login

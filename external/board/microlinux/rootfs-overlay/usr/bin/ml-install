@@ -20,20 +20,25 @@
 # firmware boot entry "MicroLinux" (first in the boot order) and a GRUB menu
 # with Windows in it.
 #
+# --user NAME [--fullname "Full Name"]: the desktop account of the installed
+# system is called NAME (default: user, as in the live system).
 # --passwords-stdin: read the new passwords as chpasswd lines (root:PASSWORD
-# and user:PASSWORD) from standard input instead of asking.
+# and user:PASSWORD; "user" is the desktop account, also with --user) from
+# standard input instead of asking.
 # --probe DISK: print what an installation on DISK would find, as key=value
 # lines, and change nothing (used by the graphical installer, ml-installer).
 set -e
-YES=; HOST=microlinux; ALONG=; PWIN=; PROBE=
+YES=; HOST=microlinux; ALONG=; PWIN=; PROBE=; NEWUSER=user; FULLNAME=
 while [ $# -gt 0 ]; do
 	case "$1" in
 		-y) YES=1 ;;
 		--hostname) HOST=$2; shift ;;
 		--alongside) ALONG=1 ;;
 		--passwords-stdin) PWIN=1 ;;
+		--user) NEWUSER=$2; shift ;;
+		--fullname) FULLNAME=$2; shift ;;
 		--probe) PROBE=1 ;;
-		-h|--help) sed -n '2,27s/^# \{0,1\}//p' "$0"; exit 0 ;;
+		-h|--help) sed -n '2,31s/^# \{0,1\}//p' "$0"; exit 0 ;;
 		*) DISK=$1 ;;
 	esac
 	shift
@@ -41,6 +46,11 @@ done
 die() { echo "ml-install: $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "run as root: sudo ml-install DISK"
 [ -d /live/rootfs/usr ] || die "not running from the MicroLinux live medium"
+echo "$NEWUSER" | grep -qE '^[a-z_][a-z0-9_-]{0,31}$' ||
+	die "--user $NEWUSER: use up to 32 lower-case letters, digits, '-' and '_' (starting with a letter)"
+[ "$NEWUSER" = user ] || ! grep -q "^$NEWUSER:" /live/rootfs/etc/passwd ||
+	die "--user $NEWUSER: that name belongs to a system account"
+case "$FULLNAME" in *:*|*,*) die "--fullname must not contain ':' or ','" ;; esac
 if [ -n "$PWIN" ]; then
 	PASSWORDS=$(cat)
 	echo "$PASSWORDS" | grep -q '^root:.' && echo "$PASSWORDS" | grep -q '^user:.' ||
@@ -198,6 +208,9 @@ echo "==> copying system ($(du -sh /live/rootfs 2>/dev/null | cut -f1))"
 mkdir -p $T
 mount "$ROOTDEV" $T
 cp -a /live/rootfs/. $T/
+# the system's own files: mlpkg system-update removes those a new release no longer has
+mkdir -p $T/var/lib/mlpkg
+( cd /live/rootfs && find . ! -type d | sed 's|^\.||' ) | sort > $T/var/lib/mlpkg/system.files
 mkdir -p $T/boot/efi
 mount "$ESP" $T/boot/efi
 
@@ -311,6 +324,26 @@ elif [ -z "$YES" ]; then
 else
 	echo "    (-y: keeping default passwords root/microlinux and user/live - change them!)"
 fi
+
+# the desktop account: renamed if asked (same UID; the passwords are set above)
+if [ "$NEWUSER" != user ] || [ -n "$FULLNAME" ]; then
+	for db in passwd shadow group gshadow; do (   # umask: shadow.new holds password hashes
+		umask 077
+		[ -f $T/etc/$db ] || exit 0
+		awk -F: -v OFS=: -v db=$db -v n="$NEWUSER" -v g="$FULLNAME" '
+			function ren(list,   m) { m = "," list ","; gsub(/,user,/, "," n ",", m); return substr(m, 2, length(m) - 2) }
+			$1 == "user" { $1 = n; if (db == "passwd") { if (g != "") $5 = g; $6 = "/home/" n } }
+			db == "group" { $4 = ren($4) }                  # members
+			db == "gshadow" { $3 = ren($3); $4 = ren($4) }  # administrators, members
+			{ print }' $T/etc/$db > $T/etc/$db.new && cat $T/etc/$db.new > $T/etc/$db && rm $T/etc/$db.new
+	) || die "renaming the account failed ($db)"; done
+	[ "$NEWUSER" = user ] || mv $T/home/user $T/home/$NEWUSER
+	echo "    desktop account: $NEWUSER${FULLNAME:+ ($FULLNAME)}"
+fi
+# who LightDM logs in automatically (not in lightdm.conf: system updates replace that)
+mkdir -p $T/etc/lightdm/lightdm.conf.d
+printf '# written by ml-install: the desktop account, logged in automatically\n[Seat:*]\nautologin-user=%s\n' "$NEWUSER" \
+	> $T/etc/lightdm/lightdm.conf.d/90-installed.conf
 
 sync
 umount $T/boot/efi $T

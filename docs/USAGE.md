@@ -35,7 +35,9 @@ Troubleshooting → "Live without saved changes". To discard the changes for
 good, delete the partition.
 
 Logins: `user` / `live`, `root` / `microlinux`. In the live system `user` can
-use `sudo` without a password. Installed systems ask you to set both passwords.
+use `sudo` without a password. On an installed system the desktop account has
+the username chosen in the installer (`ml-install --user NAME --fullname "Full
+Name"`; default `user`), and the passwords are the ones set while installing.
 
 The desktop starts without asking for a password. After logging out (menu →
 Leave → Log out) the login screen (LightDM) appears: log in again with
@@ -66,7 +68,7 @@ terminal) covers the common configuration:
 | Date & Time | clock, time zone, synchronise now |
 | Users | change your password |
 | Packages | browse, search, install and remove packages (mlpkg) |
-| About | system information; install to disk, keep changes on USB, system log |
+| About | system information; live system: install to disk, keep changes on USB; installed system: update the system; system log |
 
 Changes that need administrator rights go through `sudo`: on an installed
 system a password dialog asks for your password. `ml-settings PAGE` opens a
@@ -165,8 +167,8 @@ Other repositories: `sudo mlpkg repo add https://host/path` (or `file:///mnt/usb
 
 **Install MicroLinux** (menu → System, or Settings → About) opens the
 graphical installer, `ml-installer` (Rust + egui): choose the disk and whether
-to erase it or install alongside the systems on it, set the computer name and
-passwords, check the summary, and watch the progress. It runs `ml-install`
+to erase it or install alongside the systems on it, enter your name, username,
+the computer name and a password, check the summary, and watch the progress. It runs `ml-install`
 (through sudo) to do the work, so everything below applies to both.
 
 `sudo ml-install` is the same installer on the command line. It asks
@@ -189,6 +191,22 @@ shows MicroLinux (default, 5 s) and Windows (chainloads
 `\EFI\Microsoft\Boot\bootmgfw.efi`). See the
 [wiki](https://github.com/praneethashok14/microlinux/wiki/Installing#dual-boot-with-windows)
 for the Windows-side steps (BitLocker, AHCI, clock).
+
+## Updating the system
+
+`sudo mlpkg system-update` (or Settings → About → Update system) updates an installed MicroLinux to the newest
+release on GitHub, then upgrades the packages (`--check` only reports whether
+there is one, `-y` doesn't ask). It reads `BUILD-<arch>` and the checksums of
+the release (signed with the repository key), downloads the base ISO only when
+the build differs from `/etc/microlinux-build`, and replaces the system files
+one by one (new file, then rename, so running programs keep working). It keeps
+/home, /root, /var, /opt, /usr/local, the users and passwords, the host name,
+fstab, sudo rules, Wi-Fi and repository settings, and the files of packages
+installed with mlpkg; system users new in the release are added. Files of the
+old system that the new one no longer has are removed. The kernel and the boot
+loader are updated last; restart afterwards. The live system can't update
+itself: write the new ISO to the stick instead. The release address is in
+`/etc/mlpkg/system-update.conf`.
 
 ## System information and logs
 

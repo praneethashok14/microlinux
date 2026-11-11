@@ -4,7 +4,8 @@
 //! is done by ml-install (run through sudo), the same script the command line
 //! installer and the automated tests use:
 //!   sudo ml-install --probe DISK        facts about a disk, as key=value lines
-//!   sudo ml-install -y --passwords-stdin --hostname NAME [--alongside] DISK
+//!   sudo ml-install -y --passwords-stdin --hostname NAME --user USER
+//!                   [--fullname NAME] [--alongside] DISK
 
 use eframe::egui::{self, Color32, RichText};
 use std::collections::HashMap;
@@ -106,12 +107,18 @@ struct App {
     selected: Option<String>,
     mode: Mode,
     hostname: String,
+    fullname: String,
+    username: String,
+    /// the username follows the full name until it is edited by hand
+    username_edited: bool,
+    /// accounts of the system (root, daemons): not usable as the username
+    system_users: Vec<String>,
     user_pw: [String; 2],
     root_same: bool,
     root_pw: [String; 2],
     confirm: bool,
-    /// put the cursor into the password field when the page opens
-    focus_password: bool,
+    /// put the cursor into the first field when the page opens
+    focus_account: bool,
     log: Vec<String>,
     step: usize,
     install_rx: Option<Receiver<Msg>>,
@@ -226,6 +233,38 @@ fn hostname_ok(h: &str) -> bool {
         && h.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
+/// None if NAME can be the desktop account's name, else what is wrong
+fn username_problem(name: &str, system_users: &[String]) -> Option<&'static str> {
+    let mut chars = name.chars();
+    if name.is_empty() {
+        Some("enter a username")
+    } else if name.len() > 32 {
+        Some("at most 32 characters")
+    } else if !chars.next().is_some_and(|c| c.is_ascii_lowercase() || c == '_')
+        || !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+    {
+        Some("lower-case letters, digits, '-' and '_', starting with a letter")
+    } else if system_users.iter().any(|u| u == name) {
+        Some("that name is taken by a system account")
+    } else {
+        None
+    }
+}
+
+/// a username from the first word of a full name ("Anna Smith" -> "anna")
+fn username_from(fullname: &str) -> String {
+    let u: String = fullname
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        .collect();
+    let u = u.trim_start_matches(|c: char| c.is_ascii_digit()).to_string();
+    if u.is_empty() { "user".into() } else { u }
+}
+
 /// None if the two entries are a usable password, else what is wrong
 fn password_problem(pw: &[String; 2]) -> Option<&'static str> {
     if pw[0].is_empty() {
@@ -258,11 +297,21 @@ impl App {
             selected: None,
             mode: Mode::Erase,
             hostname: "microlinux".into(),
+            fullname: String::new(),
+            username: "user".into(),
+            username_edited: false,
+            system_users: std::fs::read_to_string("/etc/passwd")
+                .unwrap_or_default()
+                .lines()
+                .filter_map(|l| l.split(':').next())
+                .filter(|u| *u != "user")
+                .map(String::from)
+                .collect(),
             user_pw: Default::default(),
             root_same: true,
             root_pw: Default::default(),
             confirm: false,
-            focus_password: false,
+            focus_account: false,
             log: Vec::new(),
             step: 0,
             install_rx: None,
@@ -313,6 +362,8 @@ impl App {
             },
             Page::Account => {
                 hostname_ok(&self.hostname)
+                    && username_problem(&self.username, &self.system_users).is_none()
+                    && !self.fullname.contains([':', ','])
                     && password_problem(&self.user_pw).is_none()
                     && (self.root_same || password_problem(&self.root_pw).is_none())
             }
@@ -326,7 +377,10 @@ impl App {
         let root = if self.root_same { &self.user_pw[0] } else { &self.root_pw[0] };
         let passwords = format!("root:{}\nuser:{}\n", root, self.user_pw[0]);
         let mut cmd = Command::new("sudo");
-        cmd.args(["-n", "ml-install", "-y", "--passwords-stdin", "--hostname", &self.hostname]);
+        cmd.args(["-n", "ml-install", "-y", "--passwords-stdin", "--hostname", &self.hostname, "--user", &self.username]);
+        if !self.fullname.trim().is_empty() {
+            cmd.args(["--fullname", self.fullname.trim()]);
+        }
         if self.mode == Mode::Alongside {
             cmd.arg("--alongside");
         }
@@ -502,9 +556,34 @@ impl App {
     }
 
     fn account_page(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Computer name and passwords");
+        ui.heading("Who will use this computer?");
         ui.add_space(8.0);
         egui::Grid::new("account").spacing([12.0, 8.0]).show(ui, |ui| {
+            ui.label("Your name:");
+            let r = ui.add(egui::TextEdit::singleline(&mut self.fullname).hint_text("optional").desired_width(240.0));
+            if std::mem::take(&mut self.focus_account) {
+                r.request_focus();
+            }
+            if r.changed() && !self.username_edited {
+                self.username = username_from(&self.fullname);
+            }
+            ui.end_row();
+            if self.fullname.contains([':', ',']) {
+                ui.label("");
+                ui.colored_label(RED, "the name must not contain ':' or ','");
+                ui.end_row();
+            }
+            ui.label("Username:");
+            if ui.add(egui::TextEdit::singleline(&mut self.username).desired_width(240.0)).changed() {
+                self.username_edited = true;
+            }
+            ui.end_row();
+            ui.label("");
+            match username_problem(&self.username, &self.system_users) {
+                Some(p) => ui.colored_label(RED, p),
+                None => ui.label(RichText::new("used to log in; your files go to /home/".to_string() + &self.username).small().color(Color32::GRAY)),
+            };
+            ui.end_row();
             ui.label("Computer name:");
             ui.add(egui::TextEdit::singleline(&mut self.hostname).desired_width(240.0));
             ui.end_row();
@@ -515,11 +594,8 @@ impl App {
                 ui.colored_label(RED, "use lower-case letters, digits and '-' (not first or last)");
             }
             ui.end_row();
-            ui.label("Password for 'user':");
-            let r = ui.add(egui::TextEdit::singleline(&mut self.user_pw[0]).password(true).desired_width(240.0));
-            if std::mem::take(&mut self.focus_password) {
-                r.request_focus();
-            }
+            ui.label("Password:");
+            ui.add(egui::TextEdit::singleline(&mut self.user_pw[0]).password(true).desired_width(240.0));
             ui.end_row();
             ui.label("Repeat it:");
             ui.add(egui::TextEdit::singleline(&mut self.user_pw[1]).password(true).desired_width(240.0));
@@ -565,8 +641,12 @@ impl App {
             ui.label("Computer name:");
             ui.label(&self.hostname);
             ui.end_row();
-            ui.label("Users:");
-            ui.label("user (desktop), root (administrator)");
+            ui.label("Account:");
+            ui.label(if self.fullname.trim().is_empty() {
+                self.username.clone()
+            } else {
+                format!("{} ({})", self.username, self.fullname.trim())
+            });
             ui.end_row();
         });
         ui.add_space(10.0);
@@ -716,7 +796,7 @@ impl eframe::App for App {
                                 Page::Disk
                             }
                             Page::Disk => {
-                                self.focus_password = true;
+                                self.focus_account = true;
                                 Page::Account
                             }
                             Page::Account => {
