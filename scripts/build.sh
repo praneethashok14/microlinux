@@ -60,6 +60,10 @@ for A in $ARCHES; do
 	# packages every time, but never deletes: start from an empty one so that
 	# renamed or removed overlay files and moved repository files can't linger.
 	rm -rf "${O:?}/target"
+	# per-package directories keep copies of dependencies as they were when
+	# each package was built: bring copies of rebuilt packages up to date, or
+	# an old copy can end up in the image (e.g. Mesa without iris)
+	python3 "$W/src/external/board/microlinux/ppd-refresh.py" "$O" | tail -n 1
 	# Buildroot copies a local-source package once and doesn't notice later
 	# changes: rebuild ours when their source changed
 	for p in ml-settings ml-software ml-installer; do
