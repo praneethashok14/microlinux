@@ -430,11 +430,13 @@ def run_live_tests(args, rep):
         # archive manager: extracts a zip and a 7z archive (what right-click > Extract Here runs)
         # (the archives are made in /tmp/arc-src, extracted in /tmp/arc: only extracted files count)
         rc, out = vm.sh("su user -c 'rm -rf /tmp/arc /tmp/arc-src && mkdir -p /tmp/arc /tmp/arc-src/src && cd /tmp/arc-src && "
-                        "echo zip-ok > src/z.txt && echo 7z-ok > src/s.txt && "
-                        "zip -q /tmp/arc/t.zip src/z.txt && 7za a -bd /tmp/arc/t.7z src/s.txt >/dev/null && rm -r /tmp/arc-src && "
-                        f"DISPLAY=:0 timeout {30 * SCALE} lxqt-archiver --extract-here /tmp/arc/t.zip /tmp/arc/t.7z >/tmp/arc.log 2>&1; "
+                        "echo zip-ok > src/z.txt && echo 7z-ok > src/s.txt && echo tgz-ok > src/g.txt && echo txz-ok > src/x.txt && "
+                        "zip -q /tmp/arc/t.zip src/z.txt && 7za a -bd /tmp/arc/t.7z src/s.txt >/dev/null && "
+                        "tar czf /tmp/arc/g.tar.gz src/g.txt && tar cJf /tmp/arc/x.tar.xz src/x.txt && rm -r /tmp/arc-src && "
+                        f"DISPLAY=:0 timeout {30 * SCALE} lxqt-archiver --extract-here /tmp/arc/t.zip /tmp/arc/t.7z /tmp/arc/g.tar.gz /tmp/arc/x.tar.xz >/tmp/arc.log 2>&1; "
                         "find /tmp/arc -name \"*.txt\" -exec cat {} +; tail -n 2 /tmp/arc.log'", 60 * SCALE)
-        rep.check("7h", "Archive manager (lxqt-archiver) extracts zip and 7z", "zip-ok" in out and "7z-ok" in out, out.replace("\n", "; ")[-150:])
+        rep.check("7h", "Archive manager (lxqt-archiver) extracts zip, 7z, tar.gz and tar.xz",
+                  all(k in out for k in ("zip-ok", "7z-ok", "tgz-ok", "txz-ok")), out.replace("\n", "; ")[-150:])
         vm.sh("pkill -x lxqt-archiver")
         # the graphical installer (Rust + egui) opens its window
         rc, out = vm.sh(f"su user -c 'cd; DISPLAY=:0 ml-installer >/tmp/mli.log 2>&1 &'; "
