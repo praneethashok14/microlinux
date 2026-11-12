@@ -558,23 +558,41 @@ def run_system_update_test(args, rep):
                         "mlpkg system-update --check 2>&1 | tail -n 3", 120)
         rep.check("U1", "System update check (signed release info, newest build found)",
                   f"newest:    {build}" in out and ("up to date" in out or "update is available" in out), out.replace("\n", "; ")[-200:])
-        # pretend to be an older build that lacks a file, has an obsolete one, and has user data
-        rc, out = vm.sh("echo 20000101.0000-old > /etc/microlinux-build; rm /usr/bin/ml-sysinfo; "
-                        "touch /usr/share/ml-obsolete; echo /usr/share/ml-obsolete >> /var/lib/mlpkg/system.files; "
+        # installed from an older release (--iso of release-base/): the release's small
+        # update from that build; otherwise pretend to be an older build that lacks a
+        # file, so that the whole base ISO is used
+        # (an updater that knows neither small updates nor running the release's
+        # updater, as in 1.0.0, uses the ISO)
+        rc, cur = vm.sh("cat /etc/microlinux-build; grep -cE 'tar.zst|ML_SYSTEM_UPDATE_NEW' /usr/libexec/ml-system-update", 30)
+        cur, knows = (["", "0"] + cur.strip().splitlines())[-2:]
+        sums = open(os.path.join(out_dir, f"SHA256SUMS-{ARCH}")).read()
+        small = cur != build and f"update-{ARCH}-from-{cur}.tar.zst" in sums and knows != "0"
+        prep = "" if small else "echo 20000101.0000-old > /etc/microlinux-build; rm /usr/bin/ml-sysinfo; "
+        # installed from this build: pretend to be the build the small update is made
+        # from, with a different updater (it must switch to the release's)
+        m = re.search(rf" update-{ARCH}-from-(\S+)\.tar\.zst$", sums, re.M)
+        if cur == build and knows != "0" and m:
+            cur, small = m.group(1), True
+            prep = f"echo {cur} > /etc/microlinux-build; echo '# old' >> /usr/libexec/ml-system-update; "
+        rc, out = vm.sh(prep + "touch /usr/share/ml-obsolete; echo /usr/share/ml-obsolete >> /var/lib/mlpkg/system.files; "
                         "echo mine > /home/tester/keep.txt; "
-                        "mlpkg system-update -y 2>&1 | grep -E '==>|changed|removed|added|updated|WARNING|system-update:' | tail -n 12; "
-                        "echo build=$(cat /etc/microlinux-build); ls /usr/bin/ml-sysinfo; ls /usr/share/ml-obsolete 2>&1 | grep -c 'No such'; "
+                        "mlpkg system-update -y 2>&1 | grep -E '==>|changed|removed|added|updated|WARNING|system-update:' | tail -n 14; "
+                        "echo build=$(cat /etc/microlinux-build); ls /usr/bin/ml-sysinfo /usr/libexec/ml-update-notify; "
+                        "ls /usr/share/ml-obsolete 2>&1 | grep -c 'No such'; "
                         "cat /home/tester/keep.txt; hostname; echo liveuser=$(grep -c '^user:' /etc/passwd); sync", 1200)
         # (the live system's account "user" must not come back next to the renamed one)
         ok = ("liveuser=0" in out and f"build={build}" in out and "/usr/bin/ml-sysinfo" in out and "mine" in out and "mltest" in out
-              and "\n1\n" in "\n" + out + "\n")
-        rep.check("U2", "System update (mlpkg system-update): files updated, obsolete removed, user data and settings kept",
-                  ok, out.replace("\n", "; ")[-300:])
+              and "\n1\n" in "\n" + out + "\n" and (not small or "==> downloading update-" in out)
+              and (not prep.startswith(f"echo {cur}") or "updater of the new release" in out))
+        rep.check("U2", ("Small system update from " + cur if small else "System update (mlpkg system-update)")
+                  + ": files updated, obsolete removed, user data and settings kept", ok, out.replace("\n", "; ")[-300:])
         vm.stop()
         vm = VM(media)
         login(vm, timeout=180)
-        rc, out = vm.sh(f"cat /etc/microlinux-build; for i in $(seq {60 * SCALE}); do pgrep -u tester -x lxqt-panel >/dev/null && break; sleep 1; done; pgrep -u tester -l -x lxqt-panel", 120)
-        rep.check("U3", "Updated system boots to the desktop", build in out and "lxqt-panel" in out, out.replace("\n", "; ")[:200])
+        rc, out = vm.sh(f"cat /etc/microlinux-build; for i in $(seq {60 * SCALE}); do pgrep -u tester -x lxqt-panel >/dev/null && break; sleep 1; done; pgrep -u tester -l -x lxqt-panel; "
+                        "pgrep -u tester -f ml-update-notify >/dev/null && echo notifier-running", 120)
+        rep.check("U3", "Updated system boots to the desktop (with the update notifier)",
+                  build in out and "lxqt-panel" in out and "notifier-running" in out, out.replace("\n", "; ")[:200])
     except Exception as e:
         rep.check("U", "system update test", False, f"{type(e).__name__}: {e}"[:300])
     for srv in servers:

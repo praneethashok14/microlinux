@@ -1,0 +1,63 @@
+#!/bin/sh
+# ml-update-notify - tell the desktop user when a new MicroLinux release is out
+# (started at login by /etc/xdg/autostart/ml-update-notify.desktop)
+#
+# Checks two minutes after login and then every 6 hours whether the newest
+# release (as "mlpkg system-update --check" finds it: signed SHA256SUMS, BUILD)
+# is newer than this system, and shows a notification at most once a day. Its
+# "Update now" button opens a terminal with "sudo mlpkg system-update".
+[ -d /live/rootfs/usr ] && exit 0      # the live system can't update itself
+ARCH=$(uname -m)
+KEY=/usr/share/microlinux/keys/repo.pub
+URL=$(sed -n 's/^url=//p' /etc/mlpkg/system-update.conf 2>/dev/null)
+[ -n "$URL" ] || exit 0
+D=${XDG_CACHE_HOME:-$HOME/.cache}/ml-update-notify
+mkdir -p "$D" || exit 0
+NS=org.freedesktop.Notifications; NP=/org/freedesktop/Notifications
+
+# the newest build, if the release information is signed with our key
+newest() {
+	curl -fsSL -m 60 -o "$D/sums" "$URL/SHA256SUMS-$ARCH" &&
+		curl -fsSL -m 60 -o "$D/sums.sig" "$URL/SHA256SUMS-$ARCH.sig" &&
+		openssl dgst -sha256 -verify "$KEY" -signature "$D/sums.sig" "$D/sums" >/dev/null 2>&1 &&
+		curl -fsSL -m 60 -o "$D/build" "$URL/BUILD-$ARCH" || return 1
+	[ "$(sha256sum "$D/build" | cut -d' ' -f1)" = \
+	  "$(awk -v f="BUILD-$ARCH" '$2 == f || $2 == "*" f { print $1 }' "$D/sums")" ] || return 1
+	cat "$D/build"
+}
+
+# show the notification and wait (at most a day) for its button or its closing
+notify() {
+	small=; grep -q " \*\{0,1\}update-$ARCH-from-$(cat /etc/microlinux-build)\.tar\.zst$" "$D/sums" && small=1
+	size="about 300 MB"; [ -z "$small" ] || size="a small download"
+	gdbus monitor --session --dest $NS --object-path $NP > "$D/signals" 2>/dev/null &
+	mon=$!
+	sleep 1
+	id=$(gdbus call --session --dest $NS --object-path $NP --method $NS.Notify \
+		"MicroLinux" 0 "system-software-update" "System update available" \
+		"MicroLinux build $1 is ready to install ($size). Your files and settings are kept." \
+		'["update", "Update now"]' '{}' 0 2>/dev/null)
+	id=${id#*uint32 }; id=${id%%,*}
+	case "$id" in ''|*[!0-9]*) kill $mon 2>/dev/null; return 1 ;; esac
+	n=0
+	while [ $n -lt 43200 ]; do
+		if grep -q "ActionInvoked (uint32 $id, 'update')" "$D/signals"; then
+			qterminal -e sh -c "sudo mlpkg system-update; echo; printf 'Press Enter to close'; read x" &
+			break
+		fi
+		grep -q "NotificationClosed (uint32 $id," "$D/signals" && break
+		sleep 2; n=$((n + 1))
+	done
+	kill $mon 2>/dev/null
+}
+
+sleep 120
+while :; do
+	new=$(newest)
+	if [ -n "$new" ] && [ "$new" != "$(cat /etc/microlinux-build 2>/dev/null)" ] &&
+	   [ $(($(date +%s) - $(cat "$D/shown" 2>/dev/null || echo 0))) -ge 86400 ]; then
+		date +%s > "$D/shown"
+		notify "$new"
+	fi
+	sleep 21600
+done

@@ -5,9 +5,11 @@
 # The newest release on GitHub (url= in /etc/mlpkg/system-update.conf) names
 # its build in BUILD-<arch> and lists checksums in SHA256SUMS-<arch>, signed
 # with the repository key (SHA256SUMS-<arch>.sig). If that build differs from
-# /etc/microlinux-build, the base ISO is downloaded, checked, and the system
-# files are replaced from it: each file is written next to the old one and
-# renamed over it, so running programs keep working until the restart.
+# /etc/microlinux-build, the new system files are downloaded and checked: only
+# the files that changed (update-<arch>-from-<installed build>.tar.zst) when
+# the release has that for this build, otherwise the whole base ISO. Each file
+# is written next to the old one and renamed over it, so running programs keep
+# working until the restart.
 #
 # Kept as they are: /home, /root, /var, /opt, /usr/local, the users and
 # passwords, host name, fstab, sudo rules, Wi-Fi and repository settings, and
@@ -67,6 +69,15 @@ get "SHA256SUMS-$ARCH.sig" SHA256SUMS.sig
 openssl dgst -sha256 -verify "$KEY" -signature SHA256SUMS.sig SHA256SUMS >/dev/null 2>&1 ||
 	die "SHA256SUMS-$ARCH: the signature does not match (not a MicroLinux release?)"
 want() { awk -v f="$1" '$2 == f || $2 == "*" f { print $1 }' SHA256SUMS; }
+# a newer release may update in a newer way: run its updater (checked like the rest)
+if [ -z "$ML_SYSTEM_UPDATE_NEW" ] && [ -n "$(want ml-system-update)" ] &&
+   [ "$(sha256sum "$0" | cut -d' ' -f1)" != "$(want ml-system-update)" ]; then
+	get ml-system-update ml-system-update.new
+	[ "$(sha256sum ml-system-update.new | cut -d' ' -f1)" = "$(want ml-system-update)" ] || die "ml-system-update: checksum mismatch"
+	echo "==> using the updater of the new release"
+	cleanup; trap - EXIT
+	ML_SYSTEM_UPDATE_NEW=1 exec sh "$WORK/ml-system-update.new" "$@"
+fi
 get "BUILD-$ARCH" BUILD
 [ "$(sha256sum BUILD | cut -d' ' -f1)" = "$(want "BUILD-$ARCH")" ] || die "BUILD-$ARCH: checksum mismatch"
 new=$(cat BUILD)
@@ -83,32 +94,52 @@ else
 		exit 0
 	fi
 	iso=microlinux-$ARCH-base.iso
-	# the ISO (at most ~300 MiB) and room for the files while they are replaced
+	# the changed files only, if the release has them for this build
+	upd=update-$ARCH-from-$cur.tar.zst
+	[ -n "$(want "$upd")" ] || upd=
+	# the download (ISO: ~300 MiB) and room for the files while they are replaced
+	need=600; [ -z "$upd" ] || need=300
 	for d in "$WORK" /usr; do
 		free=$(df -m "$d" | awk 'NR == 2 { print $4 }')
-		[ "${free:-0}" -ge 600 ] || die "not enough free space on $d (${free} MiB, need 600 MiB)"
+		[ "${free:-0}" -ge $need ] || die "not enough free space on $d (${free} MiB, need $need MiB)"
 	done
 	if [ -z "$YES" ]; then
 		echo
-		echo "This downloads the new system (about 300 MB) and replaces the installed one."
+		if [ -n "$upd" ]; then
+			echo "This downloads the files that changed since your build and replaces them."
+		else
+			echo "This downloads the new system (about 300 MB) and replaces the installed one."
+		fi
 		echo "Your files, settings, passwords and installed packages are kept."
 		printf "Continue? [y/N] "; read -r ans
 		case "$ans" in y|Y|yes|YES) ;; *) die "cancelled" ;; esac
 	fi
 
-	echo "==> downloading $iso"
-	[ -f "$iso" ] && [ "$(sha256sum "$iso" | cut -d' ' -f1)" = "$(want "$iso")" ] ||
-		curl -fL --retry 3 --progress-bar -o "$iso" "$URL/$iso" || die "download failed: $URL/$iso"
-	[ "$(sha256sum "$iso" | cut -d' ' -f1)" = "$(want "$iso")" ] || { rm -f "$iso"; die "$iso: checksum mismatch"; }
-	mkdir -p "$ISO" "$NEW"
-	mount -o loop,ro "$iso" "$ISO"
-	mount -t squashfs -o loop,ro "$ISO/live/rootfs.sqfs" "$NEW"
-	[ "$(cat "$NEW/etc/microlinux-build" 2>/dev/null)" = "$new" ] || die "$iso does not contain build $new"
+	dl=${upd:-$iso}
+	echo "==> downloading $dl"
+	[ -f "$dl" ] && [ "$(sha256sum "$dl" | cut -d' ' -f1)" = "$(want "$dl")" ] ||
+		curl -fL --retry 3 --progress-bar -o "$dl" "$URL/$dl" || die "download failed: $URL/$dl"
+	[ "$(sha256sum "$dl" | cut -d' ' -f1)" = "$(want "$dl")" ] || { rm -f "$dl"; die "$dl: checksum mismatch"; }
+	if [ -n "$upd" ]; then
+		# the changed files, and the kernel and loader files under .ml-update
+		rm -rf "$NEW"; mkdir -p "$NEW"
+		zstd -dc "$upd" | tar -x -C "$NEW" -f - || die "$upd: could not unpack"
+		BOOTSRC=$NEW/.ml-update
+		sort "$BOOTSRC/files" > new.files
+		( cd "$NEW" && find . ! -type d ! -path './.ml-update/*' | sed 's|^\.||' ) | sort > copy.src
+	else
+		mkdir -p "$ISO" "$NEW"
+		mount -o loop,ro "$iso" "$ISO"
+		mount -t squashfs -o loop,ro "$ISO/live/rootfs.sqfs" "$NEW"
+		BOOTSRC=$ISO
+		( cd "$NEW" && find . ! -type d | sed 's|^\.||' ) | sort > new.files
+		cp new.files copy.src
+	fi
+	[ "$(cat "$NEW/etc/microlinux-build" 2>/dev/null)" = "$new" ] || die "$dl does not contain build $new"
 
 	echo "==> updating system files"
 	cat "$LIB"/installed/*.files 2>/dev/null | sort -u > owned.files
-	( cd "$NEW" && find . ! -type d | sed 's|^\.||' ) | sort > new.files
-	grep -Ev "$KEEP" new.files | not_in owned.files > copy.list || true
+	grep -Ev "$KEEP" copy.src | not_in owned.files > copy.list || true
 	total=$(wc -l < copy.list); n=0; changed=0; failed=0
 	while IFS= read -r f; do
 		n=$((n + 1))
@@ -182,10 +213,13 @@ else
 	else
 		die "kernel not found in /boot/efi/boot or /boot: the system files are updated, the kernel is not"
 	fi
-	replace "$ISO/boot/vmlinuz" "$KDIR/vmlinuz"
-	replace "$ISO/boot/initramfs.cpio.gz" "$KDIR/initramfs.cpio.gz"
+	# (a small update has only the files that changed)
+	for f in vmlinuz initramfs.cpio.gz; do
+		[ ! -f "$BOOTSRC/boot/$f" ] || replace "$BOOTSRC/boot/$f" "$KDIR/$f"
+	done
 	if [ -d "$LDIR" ]; then
-		for f in "$ISO"/EFI/BOOT/*; do
+		for f in "$BOOTSRC"/EFI/BOOT/*; do
+			[ -f "$f" ] || continue
 			b=${f##*/}
 			case "$b" in grub.cfg) continue ;; esac   # the live medium's menu
 			if [ -n "$ALONG" ]; then
@@ -200,7 +234,7 @@ else
 	sync
 	cp BUILD /etc/microlinux-build
 	cleanup
-	rm -rf "${WORK:?}"/iso "${WORK:?}"/root "${WORK:?}"/*.iso
+	rm -rf "${WORK:?}"/iso "${WORK:?}"/root "${WORK:?}"/*.iso "${WORK:?}"/*.tar.zst
 	[ "$failed" = 0 ] || echo "WARNING: $failed files could not be replaced (listed above)"
 	echo "MicroLinux is updated to build $new."
 fi

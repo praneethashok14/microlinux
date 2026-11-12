@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=MicroLinux update check
+Comment=Tells you when a new MicroLinux release is available
+Exec=/usr/libexec/ml-update-notify
+OnlyShowIn=LXQt;
+NoDisplay=true

@@ -197,8 +197,12 @@ for the Windows-side steps (BitLocker, AHCI, clock).
 `sudo mlpkg system-update` (or Settings → About → Update system) updates an installed MicroLinux to the newest
 release on GitHub, then upgrades the packages (`--check` only reports whether
 there is one, `-y` doesn't ask). It reads `BUILD-<arch>` and the checksums of
-the release (signed with the repository key), downloads the base ISO only when
-the build differs from `/etc/microlinux-build`, and replaces the system files
+the release (signed with the repository key) and, when the build differs from
+`/etc/microlinux-build`, downloads only the files that changed if the release
+has them for the installed build (`update-<arch>-from-<build>.tar.zst`, made
+against the previous release), otherwise the base ISO. It first switches to
+the release's own updater (`ml-system-update`), so improvements to updating
+apply at once. It replaces the system files
 one by one (new file, then rename, so running programs keep working). It keeps
 /home, /root, /var, /opt, /usr/local, the users and passwords, the host name,
 fstab, sudo rules, Wi-Fi and repository settings, and the files of packages
@@ -207,6 +211,15 @@ old system that the new one no longer has are removed. The kernel and the boot
 loader are updated last; restart afterwards. The live system can't update
 itself: write the new ISO to the stick instead. The release address is in
 `/etc/mlpkg/system-update.conf`.
+
+On an installed system a notification tells you when a new release is out
+(checked two minutes after login and every 6 hours, shown at most once a day);
+its **Update now** button runs the update in a terminal.
+
+Making a release: build, publish the files in `out/` (ISOs, `SHA256SUMS-*`
+with `.sig` and `.asc`, `BUILD-*`, `ml-system-update`, `update-*.tar.zst`),
+then run `./scripts/mark-released.sh`: the next builds make their small update
+against these images (kept in `release-base/`).
 
 ## System information and logs
 

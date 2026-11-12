@@ -36,7 +36,9 @@ set -e
 W=/mnt/lima-mlbuild
 BR=$W/buildroot
 # Buildroot cannot handle spaces in paths, so mirror the source tree onto the build disk.
-rsync -a --delete --exclude build-disk.img --exclude out --exclude tests/.run "$SRC/" "$W/src/"
+rsync -a --delete --exclude build-disk.img --exclude out --exclude tests/.run --exclude release-base "$SRC/" "$W/src/"
+# the last release's images (scripts/mark-released.sh): the small update is made against them
+export ML_RELEASE_BASE="$SRC/release-base"
 export BR2_DL_DIR=$W/dl
 # LLVM (Mesa's GPU drivers) needs 1-2 GB per C++ compile: swap on the build
 # disk so that parallel compiles don't run the 8 GB VM out of memory
@@ -78,10 +80,14 @@ for A in $ARCHES; do
 	fi
 	mkdir -p "$SRC/out"
 	# copy then rename, so a VM still running the previous ISO keeps its (old) file
-	for f in microlinux-$A.iso microlinux-$A-base.iso size-report.txt SHA256SUMS-$A SHA256SUMS-$A.asc SHA256SUMS-$A.sig BUILD-$A; do
+	for f in microlinux-$A.iso microlinux-$A-base.iso size-report.txt SHA256SUMS-$A SHA256SUMS-$A.asc SHA256SUMS-$A.sig BUILD-$A ml-system-update; do
 		[ -f "$O/images/$f" ] || continue
 		dst=$f; [ "$f" = size-report.txt ] && dst=size-report-$A.txt
 		cp "$O/images/$f" "$SRC/out/.$dst.new" && mv -f "$SRC/out/.$dst.new" "$SRC/out/$dst"
+	done
+	rm -f "$SRC/out/update-$A-from-"*.tar.zst
+	for f in "$O/images/update-$A-from-"*.tar.zst; do
+		[ -f "$f" ] && cp "$f" "$SRC/out/"
 	done
 	# package repository: handed over through out/ (the only folder the VM sees)
 	[ -f "$O/images/repo/INDEX" ] && rsync -a --delete "$O/images/repo/" "$SRC/out/.repo-$A/"

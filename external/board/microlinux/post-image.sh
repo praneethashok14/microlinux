@@ -318,11 +318,43 @@ mkiso "$B/microlinux-$ARCH.iso" "$B/iso-full"
 iso_tree "$B/iso-base" no
 mkiso "$B/microlinux-$ARCH-base.iso" "$B/iso-base"
 
-# checksums of the images and the build ID (BUILD-<arch>, for mlpkg
-# system-update), signed with the GPG release key and with the repository key
-# (SHA256SUMS-<arch>.sig, which MicroLinux itself can check with openssl)
+# small system update: the files that changed since the last release
+# (ML_RELEASE_BASE/<arch>/microlinux-<arch>-base.iso, kept by
+# scripts/mark-released.sh), for "mlpkg system-update" on systems running it
 cp "$T/etc/microlinux-build" "$B/BUILD-$ARCH"
-( cd "$B" && sha256sum "microlinux-$ARCH.iso" "microlinux-$ARCH-base.iso" "BUILD-$ARCH" > "SHA256SUMS-$ARCH" )
+rm -f "$B/update-$ARCH-from-"*.tar.zst
+OLDISO="${ML_RELEASE_BASE:-/nonexistent}/$ARCH/microlinux-$ARCH-base.iso"
+UPD=
+if [ -f "$OLDISO" ]; then
+	OLD="$B/release-old"
+	key=$(stat -c %s.%Y "$OLDISO")
+	if [ "$(cat "$OLD/key" 2>/dev/null)" != "$key" ]; then
+		chmod -R u+w "$OLD" 2>/dev/null || true
+		rm -rf "$OLD"; mkdir -p "$OLD/iso"
+		xorriso -osirrox on -indev "$OLDISO" -extract /boot "$OLD/iso/boot" -extract /EFI "$OLD/iso/EFI" \
+			-extract /live/rootfs.sqfs "$OLD/rootfs.sqfs" 2>/dev/null
+		chmod -R u+w "$OLD"
+		echo "$key" > "$OLD/key"
+	fi
+	from=$(unsquashfs -cat "$OLD/rootfs.sqfs" etc/microlinux-build 2>/dev/null || true)
+	if [ "$from" != "$(cat "$B/BUILD-$ARCH")" ] && echo "$from" | grep -Eq '^[A-Za-z0-9._-]+$'; then
+		UPD="update-$ARCH-from-$from.tar.zst"
+		msg "small update from $from"
+		python3 "$BOARD/make-update.py" "$OLD/rootfs.sqfs" "$OLD/iso" "$B/rootfs.squashfs" "$B/iso-base" \
+			"$B/update-work" "$B/$UPD" | sed 's/^/  /'
+		# not worth it when it is nearly as big as the ISO
+		if [ $(stat -c %s "$B/$UPD") -gt $(($(stat -c %s "$B/microlinux-$ARCH-base.iso") * 7 / 10)) ]; then
+			msg "  too big, left out"; rm -f "$B/$UPD"; UPD=
+		fi
+	fi
+fi
+
+# checksums of the images, the small update and the build ID (BUILD-<arch>,
+# for mlpkg system-update), signed with the GPG release key and with the
+# repository key (SHA256SUMS-<arch>.sig, which MicroLinux itself can check)
+# (and the updater itself: systems run the newest one, see ml-system-update)
+cp "$T/usr/libexec/ml-system-update" "$B/ml-system-update"
+( cd "$B" && sha256sum "microlinux-$ARCH.iso" "microlinux-$ARCH-base.iso" "BUILD-$ARCH" ml-system-update $UPD > "SHA256SUMS-$ARCH" )
 rm -f "$B/SHA256SUMS-$ARCH.sig"
 if [ -f "$KEYS/repo/repo.key" ]; then
 	openssl dgst -sha256 -sign "$KEYS/repo/repo.key" -out "$B/SHA256SUMS-$ARCH.sig" "$B/SHA256SUMS-$ARCH"
