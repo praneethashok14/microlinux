@@ -474,6 +474,16 @@ def run_live_tests(args, rep):
                             "su user -c 'curl -sS -fL -o ~/Downloads/SHA256SUMS https://download-installer.cdn.mozilla.net/pub/firefox/releases/153.6.0esr/SHA256SUMS' && "
                             "wc -l < /home/user/Downloads/SHA256SUMS", 120)
             rep.check("8c", "Downloads (to ~/Downloads)", rc == 0 and out.strip().split()[-1].isdigit(), out[-80:])
+            # sound: Firefox plays only through PulseAudio (started on demand); a page
+            # with a Web Audio tone must show up as a PulseAudio stream of Firefox
+            rc, out = vm.sh("su user -c 'rm -rf /tmp/ffa && mkdir -p /tmp/ffa/p && cd /tmp/ffa && "
+                            "echo \"user_pref(\\\"media.autoplay.default\\\", 0); user_pref(\\\"media.autoplay.blocking_policy\\\", 0);\" > p/user.js && "
+                            "echo \"<script>var c = new AudioContext(), o = c.createOscillator(); o.connect(c.destination); o.start();</script>\" > tone.html && "
+                            f"(timeout {60 * SCALE} firefox --headless --no-remote --profile /tmp/ffa/p file:///tmp/ffa/tone.html >/dev/null 2>&1 &) && "
+                            f"for i in $(seq {40 * SCALE}); do pactl list sink-inputs 2>/dev/null | grep -qi firefox && break; sleep 1; done; "
+                            "pactl info 2>&1 | grep -E \"Server Name|Default Sink\"; pactl list sink-inputs 2>/dev/null | grep -ci firefox'; "
+                            "pkill -f /tmp/ffa/p", 120 * SCALE)
+            rep.check("8d", "Firefox plays sound (PulseAudio)", "pulseaudio" in out.lower() and count_ok(out), out.replace("\n", "; ")[-160:])
 
         # 7f: logging out shows LightDM's login screen; the password logs back in
         vm.sh("pkill -x lxqt-session")
