@@ -208,7 +208,8 @@ one by one (new file, then rename, so running programs keep working). It keeps
 fstab, sudo rules, Wi-Fi and repository settings, and the files of packages
 installed with mlpkg; system users new in the release are added. Files of the
 old system that the new one no longer has are removed. The kernel and the boot
-loader are updated last; restart afterwards. The live system can't update
+loader are updated last; restart afterwards. On a laptop with the battery below
+20 % it doesn't start unless the charger is plugged in. The live system can't update
 itself: write the new ISO to the stick instead. The release address is in
 `/etc/mlpkg/system-update.conf`.
 

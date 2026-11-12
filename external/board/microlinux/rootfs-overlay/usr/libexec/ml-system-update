@@ -93,6 +93,22 @@ else
 		echo "An update is available: sudo mlpkg system-update"
 		exit 0
 	fi
+	# a laptop that runs out of power halfway leaves a broken system: not on a
+	# battery below 20 %, unless the charger is plugged in
+	PS=${ML_POWER_SUPPLY:-/sys/class/power_supply}
+	ac=; low=
+	for d in "$PS"/*; do
+		case "$(cat "$d/type" 2>/dev/null)" in
+			Mains|USB) [ "$(cat "$d/online" 2>/dev/null)" = 1 ] && ac=1 ;;
+			Battery)
+				[ "$(cat "$d/scope" 2>/dev/null)" = Device ] && continue   # a mouse, a keyboard
+				c=$(cat "$d/capacity" 2>/dev/null)
+				[ "$(cat "$d/status" 2>/dev/null)" = Charging ] && ac=1
+				case "$c" in ''|*[!0-9]*) ;; *) [ "$c" -lt 20 ] && low="$low $c" ;; esac ;;
+		esac
+	done
+	[ -z "$low" ] || [ -n "$ac" ] ||
+		die "the battery is at${low}%: plug in the charger (or charge to 20% or more) and try again"
 	iso=microlinux-$ARCH-base.iso
 	# the changed files only, if the release has them for this build
 	upd=update-$ARCH-from-$cur.tar.zst

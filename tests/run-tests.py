@@ -574,7 +574,13 @@ def run_system_update_test(args, rep):
         if cur == build and knows != "0" and m:
             cur, small = m.group(1), True
             prep = f"echo {cur} > /etc/microlinux-build; echo '# old' >> /usr/libexec/ml-system-update; "
-        rc, out = vm.sh(prep + "touch /usr/share/ml-obsolete; echo /usr/share/ml-obsolete >> /var/lib/mlpkg/system.files; "
+        # a battery below 20 %: refused without the charger, allowed with it
+        bat = ("mkdir -p /tmp/ps/BAT0 /tmp/ps/AC; echo Battery > /tmp/ps/BAT0/type; echo 15 > /tmp/ps/BAT0/capacity; "
+               "echo Discharging > /tmp/ps/BAT0/status; echo Mains > /tmp/ps/AC/type; echo 0 > /tmp/ps/AC/online; ")
+        rc, low = vm.sh(prep + bat + "ML_POWER_SUPPLY=/tmp/ps mlpkg system-update -y 2>&1 | tail -n 2; echo build=$(cat /etc/microlinux-build)", 300)
+        rep.check("U2b", "System update refused on a battery below 20 %",
+                  "battery is at 15%" in low and f"build={build}" not in low, low.replace("\n", "; ")[-200:])
+        rc, out = vm.sh("echo 1 > /tmp/ps/AC/online; export ML_POWER_SUPPLY=/tmp/ps; touch /usr/share/ml-obsolete; echo /usr/share/ml-obsolete >> /var/lib/mlpkg/system.files; "
                         "echo mine > /home/tester/keep.txt; "
                         "mlpkg system-update -y 2>&1 | grep -E '==>|changed|removed|added|updated|WARNING|system-update:' | tail -n 14; "
                         "echo build=$(cat /etc/microlinux-build); ls /usr/bin/ml-sysinfo /usr/libexec/ml-update-notify; "
