@@ -134,7 +134,7 @@ Two kinds of packages:
   `/var/lib/mlpkg/installed/<name>.files`, and removing the package deletes
   exactly those files. A package can't overwrite a file of the base system or
   of another package. Where it replaces a BusyBox applet (`wget`, `bc`, `diff`,
-  `unzip`, …), the BusyBox version comes back when the package is removed.
+  …), the BusyBox version comes back when the package is removed.
   Servers (nginx, dropbear, tor, …) are never started automatically.
 - **Image packages** (Firefox, the EL7 runtime) stay compressed and are mounted
   under `/opt/<name>`.

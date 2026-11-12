@@ -10,6 +10,7 @@ A tiny, fully functional Linux distribution for **x86_64** and **aarch64**
   iproute2, wpa_supplicant, BlueZ, OpenSSH client, curl, sudo, htop, nano/vi, strace.
 - **Desktop**: Xorg + LXQt 2.4 (Qt 6) with the Openbox window manager: panel,
   application menu, QTerminal, PCManFM-Qt file manager and desktop, LXQt
+  Archiver (zip, 7z, tar.gz/xz/bz2/zst; right-click → Extract Here), LXQt
   configuration center, and a MicroLinux Settings app (network/Wi-Fi, Bluetooth, display,
   sound, wallpaper, keyboard, time zone, password, packages).
 - **Browser**: official Mozilla Firefox ESR, shipped as an optional package.
