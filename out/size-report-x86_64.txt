@@ -1,4 +1,4 @@
-MicroLinux 1.0.0 x86_64 size report (2026-11-11)
+MicroLinux 1.0.1 x86_64 size report (2026-11-12)
 kernel (vmlinuz.signed) 11 MiB
 initramfs              1 MiB
 rootfs.sqfs (xz)       260 MiB
