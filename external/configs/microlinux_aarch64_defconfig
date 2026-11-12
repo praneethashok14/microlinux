@@ -211,6 +211,14 @@ BR2_PACKAGE_LXQT_QTPLUGIN=y
 BR2_PACKAGE_LXQT_THEMES=y
 BR2_PACKAGE_LXQT_ABOUT=y
 BR2_PACKAGE_PCMANFM_QT=y
+# archive manager (pcmanfm-qt: right-click > Extract), with the tools it uses
+BR2_PACKAGE_LXQT_ARCHIVER=y
+BR2_PACKAGE_P7ZIP=y
+BR2_PACKAGE_P7ZIP_7ZA=y
+BR2_PACKAGE_UNZIP=y
+BR2_PACKAGE_ZIP=y
+# GNU tar: BusyBox tar has no -z/-J/--use-compress-program (the archiver needs them)
+BR2_PACKAGE_TAR=y
 BR2_PACKAGE_QTERMINAL=y
 # graphical login screen (autologin at boot, the login screen after logging out)
 BR2_PACKAGE_LINUX_PAM=y
@@ -243,6 +251,11 @@ BR2_PACKAGE_ALSA_UTILS_ALSAMIXER=y
 BR2_PACKAGE_ALSA_UTILS_AMIXER=y
 BR2_PACKAGE_ALSA_UTILS_APLAY=y
 BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y
+# PulseAudio: Firefox (official build) has no ALSA output, only PulseAudio; the
+# daemon is started per user when a program needs it and exits when idle
+BR2_PACKAGE_PULSEAUDIO=y
+# ALSA's default device through PulseAudio (/etc/asound.conf)
+BR2_PACKAGE_ALSA_PLUGINS=y
 
 # --- Browser: official Mozilla Firefox ESR build, shipped as an mlpkg module
 BR2_PACKAGE_FIREFOX_BIN=y
@@ -316,9 +329,6 @@ BR2_PACKAGE_NNN=y
 BR2_PACKAGE_RANGER=y
 BR2_PACKAGE_RSYNC=y
 BR2_PACKAGE_WGET=y
-BR2_PACKAGE_P7ZIP=y
-BR2_PACKAGE_UNZIP=y
-BR2_PACKAGE_ZIP=y
 BR2_PACKAGE_RIPGREP=y
 BR2_PACKAGE_BC=y
 BR2_PACKAGE_LSOF=y
