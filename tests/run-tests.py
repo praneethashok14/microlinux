@@ -434,9 +434,11 @@ def run_live_tests(args, rep):
                         "zip -q /tmp/arc/t.zip src/z.txt && 7za a -bd /tmp/arc/t.7z src/s.txt >/dev/null && "
                         "tar czf /tmp/arc/g.tar.gz src/g.txt && tar cJf /tmp/arc/x.tar.xz src/x.txt && rm -r /tmp/arc-src && "
                         f"DISPLAY=:0 timeout {30 * SCALE} lxqt-archiver --extract-here /tmp/arc/t.zip /tmp/arc/t.7z /tmp/arc/g.tar.gz /tmp/arc/x.tar.xz >/tmp/arc.log 2>&1; "
-                        "find /tmp/arc -name \"*.txt\" -exec cat {} +; tail -n 2 /tmp/arc.log'", 60 * SCALE)
-        rep.check("7h", "Archive manager (lxqt-archiver) extracts zip, 7z, tar.gz and tar.xz",
-                  all(k in out for k in ("zip-ok", "7z-ok", "tgz-ok", "txz-ok")), out.replace("\n", "; ")[-150:])
+                        "find /tmp/arc -name \"*.txt\" -exec cat {} +; tail -n 2 /tmp/arc.log'; "
+                        # the file manager offers Extract Here only for types in the MIME database
+                        "grep -q 'x-compressed-tar:[*].tar.gz' /usr/share/mime/globs2 && grep -q 'zip:[*].zip' /usr/share/mime/globs2 && echo mime-ok", 60 * SCALE)
+        rep.check("7h", "Archive manager (lxqt-archiver) extracts zip, 7z, tar.gz and tar.xz; archives known to the file manager",
+                  all(k in out for k in ("zip-ok", "7z-ok", "tgz-ok", "txz-ok", "mime-ok")), out.replace("\n", "; ")[-150:])
         vm.sh("pkill -x lxqt-archiver")
         # the graphical installer (Rust + egui) opens its window
         rc, out = vm.sh(f"su user -c 'cd; DISPLAY=:0 ml-installer >/tmp/mli.log 2>&1 &'; "

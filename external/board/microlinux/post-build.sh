@@ -131,6 +131,10 @@ if [ -x "$HOST_DIR/bin/gtk-update-icon-cache" ]; then
 	done
 fi
 if [ -x "$HOST_DIR/bin/update-mime-database" ]; then
+	# shared-mime-info installs only its mime.cache, which this rebuild would replace
+	# with one knowing just the types in the target's packages/ (no archives, images...)
+	install -D -m 644 "$STAGING_DIR/usr/share/mime/packages/freedesktop.org.xml" \
+		"$T/usr/share/mime/packages/freedesktop.org.xml"
 	"$HOST_DIR/bin/update-mime-database" "$T/usr/share/mime" || true
 fi
 
