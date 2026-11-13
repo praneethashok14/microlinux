@@ -1,8 +1,8 @@
-MicroLinux 1.0.4 x86_64 size report (2026-11-13)
+MicroLinux 1.0.5 x86_64 size report (2026-11-13)
 kernel (vmlinuz.signed) 11 MiB
 initramfs              1 MiB
 rootfs.sqfs (xz)       269 MiB
-rootfs uncompressed    855 MiB
+rootfs uncompressed    856 MiB
 kernel modules         70 MiB (in rootfs)
 el7-runtime-7.9.2009.mlp 10 MiB
 firefox-153.6.0esr-2.mlp 97 MiB
