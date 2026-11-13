@@ -1,11 +1,11 @@
-MicroLinux 1.0.3 aarch64 size report (2026-11-12)
+MicroLinux 1.0.4 aarch64 size report (2026-11-13)
 kernel (vmlinuz.efi)   12 MiB
 initramfs              1 MiB
 rootfs.sqfs (xz)       136 MiB
-rootfs uncompressed    403 MiB
+rootfs uncompressed    407 MiB
 kernel modules         56 MiB (in rootfs)
 el7-runtime-7.9.2009.mlp 9 MiB
 firefox-153.6.0esr-2.mlp 88 MiB
 repository             139 packages, 527 MiB
-ISO (base)             158 MiB
-ISO (full)             255 MiB
+ISO (base)             159 MiB
+ISO (full)             256 MiB
