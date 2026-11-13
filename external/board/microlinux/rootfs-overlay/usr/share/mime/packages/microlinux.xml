@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Most programs are PIE executables, which shared-mime-info 1.12 detects as
+     shared libraries (both are ELF files of type ET_DYN). The file manager runs
+     a file only if its type is an executable one. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-sharedlib">
+    <sub-class-of type="application/x-executable"/>
+  </mime-type>
+</mime-info>

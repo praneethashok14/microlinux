@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Run Program
+Comment=Run a program that is not marked as executable (e.g. downloaded)
+Icon=application-x-executable
+Exec=ml-settings --run %f
+MimeType=application/x-executable;application/x-sharedlib;
+NoDisplay=true

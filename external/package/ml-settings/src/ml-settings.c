@@ -4,6 +4,8 @@
  *   ml-settings [PAGE]          PAGE: network bluetooth display sound appearance
  *                               keyboard datetime users packages update about
  *   ml-settings --askpass PROMPT    password dialog for sudo -A (see ml-askpass)
+ *   ml-settings --run FILE      run a program file that isn't marked executable
+ *                               (the file manager's "Run Program", ml-run.desktop)
  *
  * The program runs as the desktop user. Everything that needs root runs
  * through "sudo -A", which asks for the password with ml-askpass when the
@@ -14,6 +16,7 @@
 #include <alsa/asoundlib.h>
 #include <gtk/gtk.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/sysinfo.h>
 #include <sys/utsname.h>
@@ -1692,6 +1695,173 @@ static int askpass(const char *prompt)
 }
 
 /* ------------------------------------------------------------------------ */
+/* Run Program (ml-run.desktop)                                             */
+/* ------------------------------------------------------------------------ */
+
+#if defined(__x86_64__)
+#define ELF_MACHINE 62
+#define ELF_MACHINE_NAME "x86-64 (Intel/AMD)"
+#elif defined(__aarch64__)
+#define ELF_MACHINE 183
+#define ELF_MACHINE_NAME "ARM64"
+#endif
+
+static void message(GtkMessageType type, const char *title, const char *text)
+{
+	GtkWidget *d = gtk_message_dialog_new(NULL, 0, type, GTK_BUTTONS_CLOSE, "%s", title);
+	gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(d), "%s", text);
+	gtk_window_set_position(GTK_WINDOW(d), GTK_WIN_POS_CENTER);
+	gtk_dialog_run(GTK_DIALOG(d));
+	gtk_widget_destroy(d);
+}
+
+static guint64 elf_word(const guchar *p, int size, gboolean big)
+{
+	guint64 v = 0;
+	for (int i = 0; i < size; i++)
+		v |= (guint64)p[big ? size - 1 - i : i] << (8 * i);
+	return v;
+}
+
+/* Why FILE (CONTENT, LEN bytes) can't run here, or NULL if it can. Looks at the
+ * ELF header: the processor, and the program loader it names (PT_INTERP). */
+static char *elf_problem(const guchar *c, gsize len)
+{
+	if (len >= 2 && c[0] == 'M' && c[1] == 'Z')
+		return g_strdup("This is a Windows program. MicroLinux can't run Windows programs.");
+	if (len < 64 || memcmp(c, "\177ELF", 4) != 0)
+		return g_strdup("This file is not a Linux program.");
+	gboolean is64 = c[4] == 2, big = c[5] == 2;
+	guint64 type = elf_word(c + 16, 2, big), machine = elf_word(c + 18, 2, big);
+	const char *names[][2] = {{"3", "32-bit Intel/AMD (i386)"}, {"40", "32-bit ARM"}, {"62", "x86-64 (Intel/AMD)"},
+	                          {"183", "ARM64"}, {"243", "RISC-V"}};
+	if (machine != ELF_MACHINE || !is64) {
+		const char *name = "another kind of processor";
+		char *m = g_strdup_printf("%" G_GUINT64_FORMAT, machine);
+		for (size_t i = 0; i < G_N_ELEMENTS(names); i++)
+			if (strcmp(names[i][0], m) == 0)
+				name = names[i][1];
+		g_free(m);
+		return g_strdup_printf("This program is made for %s computers; this computer is %s. "
+		                       "Download the %s version of the program.", name, ELF_MACHINE_NAME, ELF_MACHINE_NAME);
+	}
+	if (type != 2 && type != 3)
+		return g_strdup("This file is not a program (it is a part of one, such as an object file).");
+	guint64 phoff = elf_word(c + 32, 8, big), phsize = elf_word(c + 54, 2, big), phnum = elf_word(c + 56, 2, big);
+	gboolean interp = FALSE;
+	for (guint64 i = 0; i < phnum && phoff + (i + 1) * phsize <= len && phsize >= 56; i++) {
+		const guchar *ph = c + phoff + i * phsize;
+		if (elf_word(ph, 4, big) != 3)   /* PT_INTERP */
+			continue;
+		guint64 off = elf_word(ph + 8, 8, big), size = elf_word(ph + 32, 8, big);
+		if (off + size > len || size == 0)
+			break;
+		interp = TRUE;
+		char *path = g_strndup((const char *)c + off, size);
+		char *why = g_file_test(path, G_FILE_TEST_EXISTS)
+		                ? NULL
+		                : g_strdup_printf("This program is made for a different kind of Linux: it needs %s, which "
+		                                  "MicroLinux doesn't have (MicroLinux uses glibc, like most Linux systems; "
+		                                  "look for a glibc or \"generic Linux\" version).", path);
+		g_free(path);
+		return why;
+	}
+	if (type == 3 && !interp)
+		return g_strdup("This is a library that programs use, not a program of its own.");
+	return NULL;
+}
+
+static gboolean run_quit(gpointer loop)
+{
+	g_main_loop_quit(loop);
+	return G_SOURCE_REMOVE;
+}
+
+static void run_exited(GPid pid, gint status, gpointer data)
+{
+	*(gint *)data = status;
+	g_spawn_close_pid(pid);
+}
+
+static int run_program(const char *file)
+{
+	char *name = g_path_get_basename(file), *content = NULL;
+	gsize len = 0;
+	GError *e = NULL;
+	if (!g_file_get_contents(file, &content, &len, &e)) {
+		message(GTK_MESSAGE_ERROR, "Cannot run the program", e->message);
+		return 1;
+	}
+	char *why = elf_problem((const guchar *)content, len);
+	g_free(content);
+	if (why) {
+		char *t = g_strdup_printf("“%s” can't run on MicroLinux", name);
+		message(GTK_MESSAGE_ERROR, t, why);
+		return 1;
+	}
+
+	struct stat st;
+	if (stat(file, &st) != 0 || !(st.st_mode & S_IXUSR)) {
+		GtkWidget *d = gtk_message_dialog_new(NULL, 0, GTK_MESSAGE_QUESTION, GTK_BUTTONS_NONE, "Run “%s”?", name);
+		gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(d),
+			"This program is not marked as executable yet, for example because it was downloaded. "
+			"Run only programs from sources you trust: a program can do anything your account can.");
+		gtk_dialog_add_buttons(GTK_DIALOG(d), "_Cancel", GTK_RESPONSE_CANCEL, "_Run", GTK_RESPONSE_OK, NULL);
+		gtk_window_set_position(GTK_WINDOW(d), GTK_WIN_POS_CENTER);
+		int r = gtk_dialog_run(GTK_DIALOG(d));
+		gtk_widget_destroy(d);
+		if (r != GTK_RESPONSE_OK)
+			return 1;
+		/* executable for whoever may read it */
+		mode_t x = (st.st_mode & S_IRUSR ? S_IXUSR : 0) | (st.st_mode & S_IRGRP ? S_IXGRP : 0) |
+		           (st.st_mode & S_IROTH ? S_IXOTH : 0);
+		if (chmod(file, st.st_mode | x | S_IXUSR) != 0) {
+			char *m = g_strdup_printf("Could not mark it as executable: %s", g_strerror(errno));
+			message(GTK_MESSAGE_ERROR, "Cannot run the program", m);
+			g_free(m);
+			return 1;
+		}
+	}
+
+	/* run it from its folder; if it ends with an error within a few seconds
+	 * (a missing library, ...), show what it printed */
+	char *dir = g_path_get_dirname(file), *log = g_build_filename(g_get_tmp_dir(), "ml-run-XXXXXX", NULL);
+	int fd = g_mkstemp(log);
+	char *abs = g_canonicalize_filename(file, NULL);
+	const char *argv[] = {abs, NULL};
+	GPid pid;
+	gint status = -1;
+	gboolean ok = g_spawn_async_with_fds(dir, (char **)argv, NULL, G_SPAWN_DO_NOT_REAP_CHILD, NULL, NULL, &pid, -1,
+	                                     fd, fd, &e);
+	if (fd >= 0)
+		close(fd);
+	if (ok) {
+		GMainLoop *loop = g_main_loop_new(NULL, FALSE);
+		g_child_watch_add(pid, run_exited, &status);
+		g_timeout_add_seconds(4, run_quit, loop);
+		g_main_loop_run(loop);
+		g_main_loop_unref(loop);
+		if (status != -1 && !g_spawn_check_wait_status(status, NULL)) {
+			char *out = NULL;
+			g_file_get_contents(log, &out, NULL, NULL);
+			char *t = g_strdup_printf("“%s” stopped with an error", name);
+			message(GTK_MESSAGE_ERROR, t, out && *g_strstrip(out) ? out : "It printed no message.");
+			g_free(t);
+			g_free(out);
+		}
+	} else {
+		message(GTK_MESSAGE_ERROR, "Cannot run the program", e->message);
+		g_error_free(e);
+	}
+	unlink(log);
+	g_free(log);
+	g_free(dir);
+	g_free(abs);
+	g_free(name);
+	return ok ? 0 : 1;
+}
+
+/* ------------------------------------------------------------------------ */
 
 /* Pages are built the first time they are shown, so Settings opens quickly.
  * Each stack child is an empty box holding its page constructor. */
@@ -1732,6 +1902,8 @@ int main(int argc, char **argv)
 	gtk_init(&argc, &argv);
 	if (argc > 1 && strcmp(argv[1], "--askpass") == 0)
 		return askpass(argc > 2 ? argv[2] : NULL);
+	if (argc > 2 && strcmp(argv[1], "--run") == 0)
+		return run_program(argv[2]);
 
 	window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	gtk_window_set_title(GTK_WINDOW(window), "Settings");

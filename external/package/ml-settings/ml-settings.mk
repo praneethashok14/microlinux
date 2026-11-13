@@ -20,6 +20,7 @@ define ML_SETTINGS_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 0755 $(@D)/ml-settings $(TARGET_DIR)/usr/bin/ml-settings
 	$(INSTALL) -D -m 0755 $(@D)/ml-askpass $(TARGET_DIR)/usr/libexec/ml-askpass
 	$(INSTALL) -D -m 0644 $(@D)/ml-settings.desktop $(TARGET_DIR)/usr/share/applications/ml-settings.desktop
+	$(INSTALL) -D -m 0644 $(@D)/ml-run.desktop $(TARGET_DIR)/usr/share/applications/ml-run.desktop
 endef
 
 $(eval $(generic-package))

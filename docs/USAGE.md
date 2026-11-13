@@ -52,6 +52,12 @@ lock, Alt+Tab, Alt+F4. A laptop touchpad clicks on a tap. Resolution: menu → D
 `ml-display set 1920x1080` (add `ml.res=1920x1080` to the kernel command line to
 set it at boot).
 
+Programs: double-clicking a Linux program (an ELF file) in the file manager
+runs it. A downloaded one isn't marked as executable yet: **Run Program** asks
+first, then marks it and runs it. A program that can't run here (made for
+another processor, for Windows, or for a Linux without glibc) or that stops
+with an error at once (e.g. a missing library) gets a message saying why.
+
 ## Settings
 
 **Settings** (menu → Preferences → Settings, or the panel button; `ml-settings` from a
@@ -68,7 +74,8 @@ terminal) covers the common configuration:
 | Date & Time | clock, time zone, synchronise now |
 | Users | change your password |
 | Packages | browse, search, install and remove packages (mlpkg) |
-| About | system information; live system: install to disk, keep changes on USB; installed system: update the system; system log |
+| System Update | installed and newest version and build; Update opens the update window |
+| About | system information; live system: install to disk, keep changes on USB; system log |
 
 Changes that need administrator rights go through `sudo`: on an installed
 system a password dialog asks for your password. `ml-settings PAGE` opens a

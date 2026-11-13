@@ -440,6 +440,27 @@ def run_live_tests(args, rep):
         rep.check("7h", "Archive manager (lxqt-archiver) extracts zip, 7z, tar.gz and tar.xz; archives known to the file manager",
                   all(k in out for k in ("zip-ok", "7z-ok", "tgz-ok", "txz-ok", "mime-ok")), out.replace("\n", "; ")[-150:])
         vm.sh("pkill -x lxqt-archiver")
+        # a downloaded program (ELF, PIE, not executable): the file manager opens it with
+        # Run Program (ml-settings --run), which asks before running it; a program for
+        # another processor gets an explanation instead
+        rc, out = vm.sh("su user -c 'cp /usr/bin/xwininfo /tmp/prog && chmod -x /tmp/prog && "
+                        "gio info -a standard::content-type /tmp/prog | grep content-type; gio mime application/x-sharedlib | head -n 1'")
+        rc2, out2 = vm.sh("su user -c 'cd; DISPLAY=:0 ml-settings --run /tmp/prog >/dev/null 2>&1 &'; "
+                          f"sleep {4 * SCALE}; pgrep -f 'ml-settings --run' >/dev/null && echo asking; ls -l /tmp/prog | cut -c1-10")
+        shot = vm.screenshot("run-program")
+        vm.sh("pkill -f 'ml-settings --run'")
+        rep.check("7i", "Downloaded program (ELF): opened with Run Program, which asks first",
+                  "x-sharedlib" in out and "ml-run.desktop" in out and "asking" in out2 and "-rw-" in out2,
+                  (out + "; " + out2).replace("\n", "; ")[-200:] + f" - screenshot {os.path.basename(shot)}")
+        foreign = 183 if ARCH == "x86_64" else 62   # ARM64 / x86-64 in e_machine
+        rc, out = vm.sh(f"su user -c \"cp /usr/bin/xwininfo /tmp/foreign && printf '\\\\{foreign:03o}' | "
+                        "dd of=/tmp/foreign bs=1 seek=18 conv=notrunc 2>/dev/null && chmod -x /tmp/foreign && "
+                        "cd && (DISPLAY=:0 ml-settings --run /tmp/foreign >/dev/null 2>&1 &)\"; "
+                        f"sleep {4 * SCALE}; pgrep -f 'ml-settings --run' >/dev/null && echo explained")
+        shot = vm.screenshot("run-foreign")
+        vm.sh("pkill -f 'ml-settings --run'")
+        rep.check("7j", "Program for another processor: explained instead of failing", "explained" in out,
+                  out.replace("\n", "; ")[-120:] + f" - screenshot {os.path.basename(shot)}")
         # the graphical installer (Rust + egui) opens its window
         rc, out = vm.sh(f"su user -c 'cd; DISPLAY=:0 ml-installer >/tmp/mli.log 2>&1 &'; "
                         f"for i in $(seq {20 * SCALE}); do su user -c 'DISPLAY=:0 xwininfo -root -tree' | grep -q 'Install MicroLinux' && break; sleep 1; done; "
