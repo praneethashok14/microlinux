@@ -183,6 +183,8 @@ BR2_PACKAGE_MESA3D=y
 BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_SOFTPIPE=y
 BR2_PACKAGE_MESA3D_OPENGL_GLX=y
 BR2_PACKAGE_MESA3D_OPENGL_EGL=y
+# OpenGL ES (libGLESv2, ES contexts in EGL): programs using wgpu fall back to it
+BR2_PACKAGE_MESA3D_OPENGL_ES=y
 
 # --- Desktop: LXQt 2.4 (Qt 6) with the Openbox window manager. GTK3 stays:
 # Firefox and Settings (ml-settings) use it.
