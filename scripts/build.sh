@@ -67,11 +67,18 @@ for A in $ARCHES; do
 	# an old copy can end up in the image (e.g. Mesa without iris)
 	python3 "$W/src/external/board/microlinux/ppd-refresh.py" "$O" | tail -n 1
 	# Buildroot copies a local-source package once and doesn't notice later
-	# changes: rebuild ours when their source changed
-	for p in ml-settings ml-software ml-installer; do
+	# changes: rebuild ours when their source changed, and those of ours that
+	# depend on it (their per-package copy of it would replace the new one in
+	# the image: ml-software holds a copy of ml-settings)
+	OURS="ml-settings ml-software ml-installer"
+	for p in $OURS; do
 		h=$(cd "$W/src/external/package/$p" && find . -type f -exec sha256sum {} + | LC_ALL=C sort | sha256sum | cut -c1-16)
 		[ "$(cat "$O/.ml-src-$p" 2>/dev/null)" = "$h" ] && continue
 		make O="$O" "$p-dirclean" >/dev/null
+		for q in $OURS; do
+			grep -Eq "^$(echo "$q" | tr a-z- A-Z_)_DEPENDENCIES.*[ =]$p( |\$)" "$W/src/external/package/$q/$q.mk" &&
+				make O="$O" "$q-dirclean" >/dev/null
+		done
 		echo "$h" > "$O/.ml-src-$p"
 	done
 	set -o pipefail

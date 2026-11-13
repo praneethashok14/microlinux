@@ -1,0 +1,5 @@
+# system-wide default applications (~/.config/mimeapps.list overrides them)
+[Default Applications]
+# programs (ELF) that are not marked executable, e.g. downloaded: Run Program
+application/x-executable=ml-run.desktop
+application/x-sharedlib=ml-run.desktop
