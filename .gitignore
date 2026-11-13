@@ -10,3 +10,4 @@ out/*.fd
 out/size-report.txt
 /release-base/
 out/*.tar.zst
+out/ml-system-update
