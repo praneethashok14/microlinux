@@ -625,7 +625,7 @@ def run_system_update_test(args, rep):
         rep.check("U2b", "System update refused on a battery below 20 %",
                   "battery is at 15%" in low and f"build={build}" not in low, low.replace("\n", "; ")[-200:])
         # what Settings > System Update and the update window show (no root needed)
-        rc, out = vm.sh("su tester -c '/usr/libexec/ml-system-update --info' 2>&1", 120)
+        rc, out = vm.sh("echo 80 > /tmp/ps/BAT0/capacity; su tester -c 'ML_POWER_SUPPLY=/tmp/ps /usr/libexec/ml-system-update --info' 2>&1", 120)
         vfile = os.path.join(out_dir, f"VERSION-{ARCH}")
         ver = open(vfile).read().strip() if os.path.exists(vfile) else ""
         rep.check("U1b", "Update details for the desktop user (ml-system-update --info, no root)",
@@ -643,7 +643,9 @@ def run_system_update_test(args, rep):
         shot = vm.screenshot("updater")
         rep.check("U1d", "Update window (ml-updater) opens", count_ok(out), f"{out[-150:]}; screenshot {os.path.basename(shot)}")
         vm.sh("pkill -f ml-updater")
-        rc, out = vm.sh("echo 1 > /tmp/ps/AC/online; export ML_POWER_SUPPLY=/tmp/ps; touch /usr/share/ml-obsolete; echo /usr/share/ml-obsolete >> /var/lib/mlpkg/system.files; "
+        # a laptop at 80 % without the charger (the battery is checked last: 1.0.5's
+        # updater stopped there without a message)
+        rc, out = vm.sh("echo 80 > /tmp/ps/BAT0/capacity; export ML_POWER_SUPPLY=/tmp/ps; touch /usr/share/ml-obsolete; echo /usr/share/ml-obsolete >> /var/lib/mlpkg/system.files; "
                         "echo mine > /home/tester/keep.txt; "
                         "su tester -c \"printf 'live\\n' | sudo -k -S -p '' -- env ML_POWER_SUPPLY=/tmp/ps mlpkg system-update -y\" 2>&1 | grep -E '==>|changed|removed|added|updated|WARNING|system-update:' | tail -n 14; "
                         "echo build=$(cat /etc/microlinux-build); ls /usr/bin/ml-sysinfo /usr/libexec/ml-update-notify; "
