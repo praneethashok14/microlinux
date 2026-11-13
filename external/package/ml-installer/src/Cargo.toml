@@ -4,7 +4,7 @@ version = "1.0.0"
 edition = "2021"
 rust-version = "1.88"
 resolver = "3"
-description = "MicroLinux graphical installer (front end for ml-install)"
+description = "MicroLinux graphical installer and system update window (front ends for ml-install and ml-system-update)"
 license = "MIT"
 
 [dependencies]

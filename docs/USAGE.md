@@ -194,7 +194,11 @@ for the Windows-side steps (BitLocker, AHCI, clock).
 
 ## Updating the system
 
-`sudo mlpkg system-update` (or Settings → About → Update system) updates an installed MicroLinux to the newest
+**Settings → System Update** shows the installed version and build and the
+newest release's; when they differ, **Update** opens the update window
+(`ml-updater`), which says what will be downloaded, asks for your password,
+shows the progress and offers to restart at the end. On the command line,
+`sudo mlpkg system-update` does the same: it updates an installed MicroLinux to the newest
 release on GitHub, then upgrades the packages (`--check` only reports whether
 there is one, `-y` doesn't ask). It reads `BUILD-<arch>` and the checksums of
 the release (signed with the repository key) and, when the build differs from
@@ -215,7 +219,7 @@ itself: write the new ISO to the stick instead. The release address is in
 
 On an installed system a notification tells you when a new release is out
 (checked two minutes after login and every 6 hours, shown at most once a day);
-its **Update now** button runs the update in a terminal.
+its **Update now** button opens the update window.
 
 Making a release: build, publish the files in `out/` (ISOs, `SHA256SUMS-*`
 with `.sig` and `.asc`, `BUILD-*`, `ml-system-update`, `update-*.tar.zst`),

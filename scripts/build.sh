@@ -80,7 +80,7 @@ for A in $ARCHES; do
 	fi
 	mkdir -p "$SRC/out"
 	# copy then rename, so a VM still running the previous ISO keeps its (old) file
-	for f in microlinux-$A.iso microlinux-$A-base.iso size-report.txt SHA256SUMS-$A SHA256SUMS-$A.asc SHA256SUMS-$A.sig BUILD-$A ml-system-update; do
+	for f in microlinux-$A.iso microlinux-$A-base.iso size-report.txt SHA256SUMS-$A SHA256SUMS-$A.asc SHA256SUMS-$A.sig BUILD-$A VERSION-$A ml-system-update; do
 		[ -f "$O/images/$f" ] || continue
 		dst=$f; [ "$f" = size-report.txt ] && dst=size-report-$A.txt
 		cp "$O/images/$f" "$SRC/out/.$dst.new" && mv -f "$SRC/out/.$dst.new" "$SRC/out/$dst"

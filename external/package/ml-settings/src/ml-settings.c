@@ -2,7 +2,7 @@
  * ml-settings - the MicroLinux settings application (GTK 3)
  *
  *   ml-settings [PAGE]          PAGE: network bluetooth display sound appearance
- *                               keyboard datetime users packages about
+ *                               keyboard datetime users packages update about
  *   ml-settings --askpass PROMPT    password dialog for sudo -A (see ml-askpass)
  *
  * The program runs as the desktop user. Everything that needs root runs
@@ -1403,6 +1403,156 @@ static GtkWidget *page_packages(void)
 }
 
 /* ------------------------------------------------------------------------ */
+/* System Update                                                            */
+/* ------------------------------------------------------------------------ */
+
+/* The newest release comes from "ml-system-update --info" (no root needed);
+ * the update itself runs in its own window, ml-updater. */
+static GtkWidget *upd_version, *upd_build, *upd_state, *upd_button, *upd_check;
+
+/* the value of KEY in key=value lines, or NULL */
+static char *kv_get(const char *text, const char *key)
+{
+	char **lines = g_strsplit(text, "\n", -1), *v = NULL;
+	size_t kl = strlen(key);
+	for (char **l = lines; *l && !v; l++)
+		if (strncmp(*l, key, kl) == 0 && (*l)[kl] == '=')
+			v = g_strdup(*l + kl + 1);
+	g_strfreev(lines);
+	return v;
+}
+
+static char *read_line(const char *file)
+{
+	char *text = NULL;
+	if (!g_file_get_contents(file, &text, NULL, NULL))
+		return g_strdup("unknown");
+	return g_strstrip(text);
+}
+
+static void upd_checked(gboolean ok, const char *output, gpointer data)
+{
+	gtk_widget_set_sensitive(upd_check, TRUE);
+	char *newest = ok ? kv_get(output, "newest") : NULL;
+	if (!newest) {
+		char *text = g_strstrip(g_strdup(output));
+		char **lines = g_strsplit(text, "\n", -1);
+		g_free(text);
+		guint n = g_strv_length(lines);
+		const char *why = n ? lines[n - 1] : "";
+		if (g_str_has_prefix(why, "mlpkg system-update: "))
+			why += strlen("mlpkg system-update: ");
+		char *m = g_strdup_printf("Could not check for updates: %s", *why ? why : "unknown error");
+		gtk_label_set_text(GTK_LABEL(upd_state), m);
+		gtk_label_set_text(GTK_LABEL(upd_version), "-");
+		gtk_label_set_text(GTK_LABEL(upd_build), "-");
+		g_free(m);
+		g_strfreev(lines);
+		return;
+	}
+	char *version = kv_get(output, "newest_version"), *installed = kv_get(output, "installed");
+	char *live = kv_get(output, "live"), *battery = kv_get(output, "battery_low");
+	char *bytes = kv_get(output, "download_bytes"), *dl = kv_get(output, "download");
+	gtk_label_set_text(GTK_LABEL(upd_version), version ? version : "unknown");
+	gtk_label_set_text(GTK_LABEL(upd_build), newest);
+	GString *m = g_string_new(NULL);
+	gboolean update = g_strcmp0(newest, installed) != 0;
+	if (!update) {
+		g_string_append(m, "The system is up to date.");
+	} else if (live) {
+		g_string_append(m, "A new release is out. The live system can't update itself: download the new ISO from "
+		                   "github.com/praneethashok14/microlinux/releases and write it to the USB stick.");
+		update = FALSE;
+	} else {
+		double mb = bytes && *bytes ? g_ascii_strtod(bytes, NULL) / 1e6 : 0;
+		gboolean small = dl && g_str_has_prefix(dl, "update-");
+		g_string_append(m, "An update is available.");
+		if (mb > 0)
+			g_string_append_printf(m, " Download: %.0f MB%s.", mb < 1 ? 1 : mb, small ? " (only the changed files)" : " (the whole system)");
+		if (battery)
+			g_string_append_printf(m, "\nThe battery is at %s%%: plug in the charger to update.", battery);
+	}
+	gtk_label_set_text(GTK_LABEL(upd_state), m->str);
+	gtk_widget_set_visible(upd_button, update);
+	g_string_free(m, TRUE);
+	g_free(newest);
+	g_free(version);
+	g_free(installed);
+	g_free(live);
+	g_free(battery);
+	g_free(bytes);
+	g_free(dl);
+}
+
+static void upd_check_now(void)
+{
+	gtk_widget_set_sensitive(upd_check, FALSE);
+	gtk_widget_hide(upd_button);
+	gtk_label_set_text(GTK_LABEL(upd_version), "checking ...");
+	gtk_label_set_text(GTK_LABEL(upd_build), "checking ...");
+	gtk_label_set_text(GTK_LABEL(upd_state), "");
+	const char *argv[] = {"/usr/libexec/ml-system-update", "--info", NULL};
+	run(argv, FALSE, NULL, upd_checked, NULL);
+}
+
+static void upd_check_cb(GtkButton *b, gpointer d) { upd_check_now(); }
+
+/* the update window closed: show what is installed now */
+static void upd_window_closed(GPid pid, gint status, gpointer d)
+{
+	g_spawn_close_pid(pid);
+	gtk_widget_set_sensitive(upd_button, TRUE);
+	upd_check_now();
+}
+
+static void upd_start(GtkButton *b, gpointer d)
+{
+	const char *argv[] = {"ml-updater", NULL};
+	GPid pid;
+	GError *e = NULL;
+	if (!g_spawn_async(NULL, (char **)argv, NULL, G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD, NULL, NULL, &pid, &e)) {
+		set_status("ml-updater: %s", e->message);
+		g_error_free(e);
+		return;
+	}
+	gtk_widget_set_sensitive(upd_button, FALSE);
+	g_child_watch_add(pid, upd_window_closed, NULL);
+}
+
+static GtkWidget *page_update(void)
+{
+	GtkWidget *body, *page = page_new("System Update",
+	                                  "MicroLinux updates itself from its releases on GitHub. "
+	                                  "Your files, settings, passwords and installed packages are kept.",
+	                                  &body);
+	char *version = read_line("/etc/microlinux-release"), *build = read_line("/etc/microlinux-build");
+	GtkWidget *s = section(body, "This system");
+	row(s, "Version", gtk_label_new(version));
+	GtkWidget *l = mono_label();
+	gtk_label_set_text(GTK_LABEL(l), build);
+	row(s, "Build", l);
+	g_free(version);
+	g_free(build);
+
+	s = section(body, "Newest release");
+	upd_version = gtk_label_new("");
+	row(s, "Version", upd_version);
+	upd_build = mono_label();
+	row(s, "Build", upd_build);
+	upd_state = gtk_label_new("");
+	gtk_label_set_xalign(GTK_LABEL(upd_state), 0);
+	gtk_label_set_line_wrap(GTK_LABEL(upd_state), TRUE);
+	gtk_box_pack_start(GTK_BOX(s), upd_state, FALSE, FALSE, 0);
+	GtkWidget *bb = button_row(s);
+	upd_button = add_button(bb, "_Update ...", G_CALLBACK(upd_start), NULL);
+	gtk_style_context_add_class(gtk_widget_get_style_context(upd_button), "suggested-action");
+	gtk_widget_set_no_show_all(upd_button, TRUE);
+	upd_check = add_button(bb, "_Check again", G_CALLBACK(upd_check_cb), NULL);
+	upd_check_now();
+	return page;
+}
+
+/* ------------------------------------------------------------------------ */
 /* About                                                                    */
 /* ------------------------------------------------------------------------ */
 
@@ -1453,11 +1603,6 @@ static void about_install(GtkButton *b, gpointer d)
 	g_spawn_async(NULL, (char **)argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
 }
 
-static void about_update(GtkButton *b, gpointer d)
-{
-	run_in_terminal("Update MicroLinux", "sudo mlpkg system-update; echo; printf 'Press Enter to close'; read x");
-}
-
 static void about_persist(GtkButton *b, gpointer d)
 {
 	run_in_terminal("Keep changes on USB", "sudo ml-persist; echo; printf 'Press Enter to close'; read x");
@@ -1506,8 +1651,6 @@ static GtkWidget *page_about(void)
 	if (live) {
 		add_button(bb, "_Install to disk ...", G_CALLBACK(about_install), NULL);
 		add_button(bb, "_Keep changes on USB ...", G_CALLBACK(about_persist), NULL);
-	} else {
-		add_button(bb, "_Update system ...", G_CALLBACK(about_update), NULL);
 	}
 	add_button(bb, "System _log", G_CALLBACK(about_log), NULL);
 	return page;
@@ -1624,7 +1767,8 @@ int main(int argc, char **argv)
 		{"display", "Display", page_display},       {"sound", "Sound", page_sound},
 		{"appearance", "Appearance", page_appearance}, {"keyboard", "Keyboard", page_keyboard},
 		{"datetime", "Date & Time", page_datetime}, {"users", "Users", page_users},
-		{"packages", "Packages", page_packages},    {"about", "About", page_about},
+		{"packages", "Packages", page_packages},    {"update", "System Update", page_update},
+		{"about", "About", page_about},
 	};
 	for (size_t i = 0; i < G_N_ELEMENTS(pages); i++) {
 		GtkWidget *holder = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);

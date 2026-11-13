@@ -1,6 +1,8 @@
 #!/bin/sh
 # ml-system-update - update an installed MicroLinux to the newest release
-# (run as "sudo mlpkg system-update [--check] [-y]")
+# (run as "sudo mlpkg system-update [--check] [-y]"; "ml-system-update --info"
+# needs no root and prints what an update would do, for Settings > System Update
+# and the update window, ml-updater)
 #
 # The newest release on GitHub (url= in /etc/mlpkg/system-update.conf) names
 # its build in BUILD-<arch> and lists checksums in SHA256SUMS-<arch>, signed
@@ -26,18 +28,67 @@ LIST=$LIB/system.files
 # on the disk (/var/cache is /tmp, in RAM)
 WORK=/var/lib/mlpkg/system-update
 ARCH=$(uname -m)
-CHECK=; YES=
+CHECK=; YES=; INFO=
 die() { echo "mlpkg system-update: $*" >&2; exit 1; }
 for a in "$@"; do
 	case "$a" in
 		--check) CHECK=1 ;;
 		-y) YES=1 ;;
+		--info) INFO=1 ;;
 		*) die "unknown option: $a (usage: mlpkg system-update [--check] [-y])" ;;
 	esac
 done
-[ "$(id -u)" = 0 ] || die "run as root: sudo mlpkg system-update"
 URL=$(sed -n 's/^url=//p' "$CONF" 2>/dev/null)
 [ -n "$URL" ] || die "no url= in $CONF"
+
+# a laptop that runs out of power halfway leaves a broken system: not on a
+# battery below 20 %, unless the charger is plugged in (sets $low and $ac)
+power() {
+	PS=${ML_POWER_SUPPLY:-/sys/class/power_supply}
+	ac=; low=
+	for d in "$PS"/*; do
+		case "$(cat "$d/type" 2>/dev/null)" in
+			Mains|USB) [ "$(cat "$d/online" 2>/dev/null)" = 1 ] && ac=1 ;;
+			Battery)
+				[ "$(cat "$d/scope" 2>/dev/null)" = Device ] && continue   # a mouse, a keyboard
+				c=$(cat "$d/capacity" 2>/dev/null)
+				[ "$(cat "$d/status" 2>/dev/null)" = Charging ] && ac=1
+				case "$c" in ''|*[!0-9]*) ;; *) [ "$c" -lt 20 ] && low="$low $c" ;; esac ;;
+		esac
+	done
+}
+
+# key=value lines: installed[_version], newest[_version], download, download_bytes,
+# live=1, battery_low=PERCENT (too low to update without the charger)
+if [ -n "$INFO" ]; then
+	D=$(mktemp -d) || exit 1
+	trap 'rm -rf "$D"' EXIT
+	cur=$(cat /etc/microlinux-build 2>/dev/null)
+	echo "installed=$cur"
+	echo "installed_version=$(cat /etc/microlinux-release 2>/dev/null)"
+	[ ! -d /live/rootfs/usr ] || echo "live=1"
+	power
+	[ -z "$low" ] || [ -n "$ac" ] || echo "battery_low=${low# }"
+	f() { curl -fsSL -m 60 -o "$D/$2" "$URL/$1"; }
+	f "SHA256SUMS-$ARCH" sums && f "SHA256SUMS-$ARCH.sig" sums.sig ||
+		die "could not download the release information (no internet connection?)"
+	openssl dgst -sha256 -verify "$KEY" -signature "$D/sums.sig" "$D/sums" >/dev/null 2>&1 ||
+		die "SHA256SUMS-$ARCH: the signature does not match (not a MicroLinux release?)"
+	sum() { awk -v f="$1" '$2 == f || $2 == "*" f { print $1 }' "$D/sums"; }
+	ok() { [ -n "$(sum "$1")" ] && f "$1" "$2" && [ "$(sha256sum "$D/$2" | cut -d' ' -f1)" = "$(sum "$1")" ]; }
+	ok "BUILD-$ARCH" build || die "BUILD-$ARCH: checksum mismatch"
+	echo "newest=$(cat "$D/build")"
+	# (releases before 1.0.5 have no VERSION file)
+	! ok "VERSION-$ARCH" version || echo "newest_version=$(cat "$D/version")"
+	dl=update-$ARCH-from-$cur.tar.zst
+	[ -n "$(sum "$dl")" ] || dl=microlinux-$ARCH-base.iso
+	echo "download=$dl"
+	echo "download_bytes=$(curl -fsSIL -m 60 "$URL/$dl" | tr -d '\r' |
+		awk 'tolower($1) == "content-length:" { n = $2 } END { print n }')"
+	exit 0
+fi
+
+[ "$(id -u)" = 0 ] || die "run as root: sudo mlpkg system-update"
 if [ -d /live/rootfs/usr ]; then
 	echo "This is the live system: it can't replace itself. Download the newest ISO from"
 	echo "  ${URL%/download}"
@@ -93,20 +144,7 @@ else
 		echo "An update is available: sudo mlpkg system-update"
 		exit 0
 	fi
-	# a laptop that runs out of power halfway leaves a broken system: not on a
-	# battery below 20 %, unless the charger is plugged in
-	PS=${ML_POWER_SUPPLY:-/sys/class/power_supply}
-	ac=; low=
-	for d in "$PS"/*; do
-		case "$(cat "$d/type" 2>/dev/null)" in
-			Mains|USB) [ "$(cat "$d/online" 2>/dev/null)" = 1 ] && ac=1 ;;
-			Battery)
-				[ "$(cat "$d/scope" 2>/dev/null)" = Device ] && continue   # a mouse, a keyboard
-				c=$(cat "$d/capacity" 2>/dev/null)
-				[ "$(cat "$d/status" 2>/dev/null)" = Charging ] && ac=1
-				case "$c" in ''|*[!0-9]*) ;; *) [ "$c" -lt 20 ] && low="$low $c" ;; esac ;;
-		esac
-	done
+	power
 	[ -z "$low" ] || [ -n "$ac" ] ||
 		die "the battery is at${low}%: plug in the charger (or charge to 20% or more) and try again"
 	iso=microlinux-$ARCH-base.iso

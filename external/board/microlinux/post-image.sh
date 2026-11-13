@@ -322,6 +322,8 @@ mkiso "$B/microlinux-$ARCH-base.iso" "$B/iso-base"
 # (ML_RELEASE_BASE/<arch>/microlinux-<arch>-base.iso, kept by
 # scripts/mark-released.sh), for "mlpkg system-update" on systems running it
 cp "$T/etc/microlinux-build" "$B/BUILD-$ARCH"
+# the version number, shown by Settings > System Update
+cp "$T/etc/microlinux-release" "$B/VERSION-$ARCH"
 rm -f "$B/update-$ARCH-from-"*.tar.zst
 OLDISO="${ML_RELEASE_BASE:-/nonexistent}/$ARCH/microlinux-$ARCH-base.iso"
 UPD=
@@ -354,7 +356,7 @@ fi
 # repository key (SHA256SUMS-<arch>.sig, which MicroLinux itself can check)
 # (and the updater itself: systems run the newest one, see ml-system-update)
 cp "$T/usr/libexec/ml-system-update" "$B/ml-system-update"
-( cd "$B" && sha256sum "microlinux-$ARCH.iso" "microlinux-$ARCH-base.iso" "BUILD-$ARCH" ml-system-update $UPD > "SHA256SUMS-$ARCH" )
+( cd "$B" && sha256sum "microlinux-$ARCH.iso" "microlinux-$ARCH-base.iso" "BUILD-$ARCH" "VERSION-$ARCH" ml-system-update $UPD > "SHA256SUMS-$ARCH" )
 rm -f "$B/SHA256SUMS-$ARCH.sig"
 if [ -f "$KEYS/repo/repo.key" ]; then
 	openssl dgst -sha256 -sign "$KEYS/repo/repo.key" -out "$B/SHA256SUMS-$ARCH.sig" "$B/SHA256SUMS-$ARCH"

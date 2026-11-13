@@ -5,7 +5,7 @@
 # Checks two minutes after login and then every 6 hours whether the newest
 # release (as "mlpkg system-update --check" finds it: signed SHA256SUMS, BUILD)
 # is newer than this system, and shows a notification at most once a day. Its
-# "Update now" button opens a terminal with "sudo mlpkg system-update".
+# "Update now" button opens the system update window (ml-updater).
 [ -d /live/rootfs/usr ] && exit 0      # the live system can't update itself
 ARCH=$(uname -m)
 KEY=/usr/share/microlinux/keys/repo.pub
@@ -42,7 +42,7 @@ notify() {
 	n=0
 	while [ $n -lt 43200 ]; do
 		if grep -q "ActionInvoked (uint32 $id, 'update')" "$D/signals"; then
-			qterminal -e sh -c "sudo mlpkg system-update; echo; printf 'Press Enter to close'; read x" &
+			ml-updater &
 			break
 		fi
 		grep -q "NotificationClosed (uint32 $id," "$D/signals" && break

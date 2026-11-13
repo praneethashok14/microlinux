@@ -30,9 +30,11 @@ ML_INSTALLER_PRE_CONFIGURE_HOOKS += ML_INSTALLER_VENDOR_CRATES
 # rebuilds: only what changed is compiled again
 ML_INSTALLER_CARGO_ENV = CARGO_TARGET_DIR=$(BUILD_DIR)/ml-installer-cargo-target
 
+# ml-updater, the system update window, is the same program (see main.rs)
 define ML_INSTALLER_INSTALL_DESKTOP_FILE
 	$(INSTALL) -D -m 0644 $(@D)/ml-installer.desktop \
 		$(TARGET_DIR)/usr/share/applications/ml-installer.desktop
+	ln -sf ml-installer $(TARGET_DIR)/usr/bin/ml-updater
 endef
 ML_INSTALLER_POST_INSTALL_TARGET_HOOKS += ML_INSTALLER_INSTALL_DESKTOP_FILE
 

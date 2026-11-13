@@ -6,6 +6,11 @@
 //!   sudo ml-install --probe DISK        facts about a disk, as key=value lines
 //!   sudo ml-install -y --passwords-stdin --hostname NAME --user USER
 //!                   [--fullname NAME] [--alongside] DISK
+//!
+//! Started as ml-updater (a link to this program) it is the system update
+//! window instead (updater.rs): one program, so egui is on the system once.
+
+mod updater;
 
 use eframe::egui::{self, Color32, RichText};
 use std::collections::HashMap;
@@ -830,6 +835,10 @@ impl eframe::App for App {
 }
 
 fn main() -> eframe::Result {
+    let argv0 = std::env::args().next().unwrap_or_default();
+    if argv0.rsplit('/').next() == Some("ml-updater") {
+        return updater::main();
+    }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Install MicroLinux")
