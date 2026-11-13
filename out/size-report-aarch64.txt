@@ -1,4 +1,4 @@
-MicroLinux 1.0.5 aarch64 size report (2026-11-13)
+MicroLinux 1.0.6 aarch64 size report (2026-11-13)
 kernel (vmlinuz.efi)   12 MiB
 initramfs              1 MiB
 rootfs.sqfs (xz)       136 MiB
