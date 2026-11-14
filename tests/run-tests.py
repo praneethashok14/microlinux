@@ -665,16 +665,20 @@ def run_system_update_test(args, rep):
         # updater stopped there without a message)
         rc, out = vm.sh("echo 80 > /tmp/ps/BAT0/capacity; export ML_POWER_SUPPLY=/tmp/ps; touch /usr/share/ml-obsolete; echo /usr/share/ml-obsolete >> /var/lib/mlpkg/system.files; "
                         "echo mine > /home/tester/keep.txt; "
-                        "su tester -c \"printf 'live\\n' | sudo -k -S -p '' -- env ML_POWER_SUPPLY=/tmp/ps mlpkg system-update -y\" 2>&1 | grep -E '==>|changed|removed|added|updated|WARNING|system-update:' | tail -n 14; "
+                        # a package the new release adds to the full ISO: installed by the update
+                        "mlpkg remove debian-runtime >/dev/null 2>&1; sed -i '/^debian-runtime$/d' /usr/share/microlinux/iso-packages; "
+                        "su tester -c \"printf 'live\\n' | sudo -k -S -p '' -- env ML_POWER_SUPPLY=/tmp/ps mlpkg system-update -y\" 2>&1 | grep -E '==>|changed|removed|added|updated|WARNING|system-update:' | tail -n 16; "
                         "echo build=$(cat /etc/microlinux-build); ls /usr/bin/ml-sysinfo /usr/libexec/ml-update-notify; "
+                        "mlpkg list -i | grep -q '^debian-runtime .*installed' && echo new-iso-package-installed; "
                         "ls /usr/share/ml-obsolete 2>&1 | grep -c 'No such'; "
                         "cat /home/tester/keep.txt; hostname; echo liveuser=$(grep -c '^user:' /etc/passwd); sync", 1200)
         # (the live system's account "user" must not come back next to the renamed one)
         ok = ("liveuser=0" in out and f"build={build}" in out and "/usr/bin/ml-sysinfo" in out and "mine" in out and "mltest" in out
               and "\n1\n" in "\n" + out + "\n" and (not small or "==> downloading update-" in out)
-              and (not prep.startswith(f"echo {cur}") or "updater of the new release" in out))
+              and (not prep.startswith(f"echo {cur}") or "updater of the new release" in out)
+              and "installing debian-runtime" in out and "new-iso-package-installed" in out)
         rep.check("U2", ("Small system update from " + cur if small else "System update (mlpkg system-update)")
-                  + ": files updated, obsolete removed, user data and settings kept", ok, out.replace("\n", "; ")[-300:])
+                  + ": files updated, obsolete removed, user data and settings kept, package new in the full ISO installed", ok, out.replace("\n", "; ")[-300:])
         vm.stop()
         vm = VM(media)
         login(vm, timeout=180)

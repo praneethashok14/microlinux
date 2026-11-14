@@ -223,7 +223,10 @@ one by one (new file, then rename, so running programs keep working). It keeps
 fstab, sudo rules, Wi-Fi and repository settings, and the files of packages
 installed with mlpkg; system users new in the release are added. Files of the
 old system that the new one no longer has are removed. The kernel and the boot
-loader are updated last; restart afterwards. On a laptop with the battery below
+loader are updated last; restart afterwards. Packages that a new release adds
+to the full ISO (such as the RHEL 10 and Debian runtimes in 1.0.8) are installed
+from the package repository on systems installed from the full ISO; packages you
+removed stay removed. On a laptop with the battery below
 20 % it doesn't start unless the charger is plugged in. The live system can't update
 itself: write the new ISO to the stick instead. The release address is in
 `/etc/mlpkg/system-update.conf`.

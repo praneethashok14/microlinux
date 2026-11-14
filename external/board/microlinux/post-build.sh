@@ -58,6 +58,12 @@ EOR
 echo "$VERSION" > "$T/etc/microlinux-release"
 # which build this is (scripts/build.sh sets ML_BUILD_ID); mlpkg system-update compares it
 echo "${ML_BUILD_ID:-$(date -u +%Y%m%d.%H%M)-local}" > "$T/etc/microlinux-build"
+# the packages the full ISO has (pkgroot/*): a system update installs the ones
+# a new release adds (ml-system-update)
+mkdir -p "$T/usr/share/microlinux"
+for f in "$BINARIES_DIR"/pkgroot/*/.mlpkg/info; do
+	[ -f "$f" ] && sed -n 's/^name=//p' "$f"
+done | sort > "$T/usr/share/microlinux/iso-packages"
 ln -sf ../usr/lib/os-release "$T/etc/os-release"
 
 # login banner

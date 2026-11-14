@@ -19,7 +19,10 @@
 # release adds (e.g. for a new service) are added. Files the old system had
 # (/var/lib/mlpkg/system.files) and the new one doesn't are removed. Then the
 # kernel and the boot loader are updated, and "mlpkg upgrade" updates the
-# packages (also when the system itself is up to date).
+# packages (also when the system itself is up to date). Packages that the new
+# release adds to the full ISO (/usr/share/microlinux/iso-packages) are
+# installed on systems installed from the full ISO; ones that were there
+# before and have been removed stay removed.
 set -e
 CONF=/etc/mlpkg/system-update.conf
 KEY=/usr/share/microlinux/keys/repo.pub
@@ -137,6 +140,14 @@ new=$(cat BUILD)
 cur=$(cat /etc/microlinux-build 2>/dev/null || echo "unknown (installed before system updates existed)")
 echo "    installed: $cur"
 echo "    newest:    $new"
+# the full ISO's packages before this update (releases before the list existed:
+# 1.0.8, build 20261114.0822, added el10-runtime and debian-runtime)
+ISOPKG=/usr/share/microlinux/iso-packages
+if [ -f "$ISOPKG" ]; then old_iso=$(cat "$ISOPKG")
+else
+	old_iso="el7-runtime firefox"
+	case "$cur" in [0-9]*) [ "$cur" \< 20261114.0822 ] || old_iso="$old_iso el10-runtime debian-runtime" ;; esac
+fi
 
 if [ "$new" = "$cur" ]; then
 	echo "The system is up to date."
@@ -297,5 +308,16 @@ fi
 
 echo "==> updating packages"
 mlpkg update && mlpkg upgrade
+if [ "$new" != "$cur" ] && [ -f "$ISOPKG" ]; then
+	full=
+	for p in $old_iso; do [ ! -f "$LIB/installed/$p.info" ] || full=1; done
+	for p in $(cat "$ISOPKG"); do
+		[ -n "$full" ] || break
+		case " $(echo $old_iso) " in *" $p "*) continue ;; esac
+		[ ! -f "$LIB/installed/$p.info" ] || continue
+		echo "==> installing $p (new in the full MicroLinux image)"
+		mlpkg install "$p" || echo "WARNING: $p could not be installed now: sudo mlpkg install $p"
+	done
+fi
 sync
 [ "$new" = "$cur" ] || echo "Restart to start the new system: sudo reboot"
