@@ -394,6 +394,27 @@ def run_live_tests(args, rep):
                             "ls /usr/bin/python3 /usr/bin/git 2>/dev/null || echo gone; readlink /usr/bin/wget; mlpkg list -i | grep -c 'installed' || true", 300)
             rep.check("P4", "Remove packages + autoremove dependencies (busybox wget restored)",
                       "gone" in out and "/bin/busybox" in out, out.replace("\n", "; ")[:200])
+            # Software's "Install .deb...": real Debian packages (jq needs libjq1, which needs libonig5)
+            rc, out = vm.sh("mlpkg install ml-software >/dev/null && ls /usr/libexec/ml-deb-install && "
+                            "B=https://snapshot.debian.org/archive/debian/20260913T000000Z/pool/main; "
+                            "a=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/'); mkdir -p /tmp/debs && cd /tmp/debs && "
+                            "curl -sSfL -O $B/j/jq/jq_1.7.1-6+deb13u3_$a.deb -O $B/j/jq/libjq1_1.7.1-6+deb13u3_$a.deb "
+                            "-O $B/libo/libonig/libonig5_6.9.9-1+b1_$a.deb && "
+                            "{ ml-deb-install jq_*.deb 2>&1 | grep -m1 -o 'libjq.so.1' || echo no-missing-message; "
+                            "ml-deb-install *.deb 2>&1 | grep -E 'runs with|installed'; "
+                            "echo '{\"a\":42}' | jq .a; mlpkg list -i | grep -c '^deb-'; "
+                            "mlpkg remove deb-jq deb-libjq1 deb-libonig5 >/dev/null; ls /usr/bin/jq 2>&1 | grep -c 'No such'; }", 600)
+            lines = out.splitlines()
+            rep.check("P5", "Install .deb: real Debian packages (jq + its libraries) installed, run, removed; a missing library is named",
+                      "libjq.so.1" in out and "installed deb-jq" in out and "42" in lines and lines[-2:] == ["3", "1"],
+                      out.replace("\n", "; ")[:300])
+            rc, out = vm.sh("su user -c 'DISPLAY=:0 ml-software >/dev/null 2>&1 &'; "
+                            f"for i in $(seq {30 * SCALE}); do su user -c 'DISPLAY=:0 xwininfo -root -tree' | grep -q '\"Software\"' && break; sleep 1; done; "
+                            f"sleep {5 * SCALE}; su user -c 'DISPLAY=:0 xwininfo -root -tree' | grep -c '\"Software\"'", 120)
+            shot = vm.screenshot("software")
+            rep.check("P6", "Software opens (with Install .deb)", out.strip().splitlines()[-1:] != ["0"] and rc == 0,
+                      f"{out[-40:]}; screenshot {os.path.basename(shot)}")
+            vm.sh("pkill -x ml-software")
             httpd.shutdown()
         else:
             rep.notes.append(f"package repository tests skipped: {os.path.relpath(repo, ROOT)} not built")

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Install Debian Package
+Comment=Install a Debian or Ubuntu package (.deb) with Software
+Icon=system-software-install
+Exec=ml-software --install-deb %F
+MimeType=application/vnd.debian.binary-package;
+NoDisplay=true
+Categories=System;PackageManager;

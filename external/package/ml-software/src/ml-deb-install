@@ -1,0 +1,153 @@
+#!/bin/sh
+# ml-deb-install - install Debian / Ubuntu packages (.deb) on MicroLinux
+#
+#   sudo ml-deb-install FILE.deb...      (Software: "Install .deb...")
+#
+# Each .deb becomes the mlpkg package deb-NAME, so it is listed in Software
+# under Installed and removed like any other package (sudo mlpkg remove
+# deb-NAME). Its files go to their usual places (/usr/share/..., /usr/lib/...,
+# Debian's library directory /usr/lib/<arch>-linux-gnu, /opt/...). Its
+# programs (/usr/bin, /usr/games, ...) start through a small launcher in their
+# place: directly when MicroLinux's own libraries are enough (elfcheck says
+# NATIVE), otherwise with Debian's libraries (deb-run, from the debian-runtime
+# package, which is installed first when it is missing).
+#
+# Before installing, every library the packages need is looked up (in the
+# packages given together, MicroLinux, the Debian runtime and .deb packages
+# installed before). If one is missing nothing is installed and the message
+# names it: add the .deb that contains it (packages.debian.org, "Search the
+# contents of packages") to the same installation.
+# Files that MicroLinux already has are left as they are. The packages'
+# setup scripts (postinst) are not run.
+set -e
+die() { echo "ml-deb-install: $*" >&2; exit 1; }
+[ $# -gt 0 ] || { sed -n '2,20s/^# \{0,1\}//p' "$0"; exit 2; }
+[ "$(id -u)" = 0 ] || die "must be run as root (sudo ml-deb-install FILE.deb)"
+export LC_ALL=C
+T=$(uname -m)-linux-gnu
+case "$(uname -m)" in x86_64) DA=amd64 ;; aarch64) DA=arm64 ;; *) DA=$(uname -m) ;; esac
+DEB=/opt/debian
+W=$(mktemp -d /var/tmp/ml-deb.XXXXXX)
+trap 'rm -rf "$W"' EXIT
+
+if [ ! -d "$DEB/usr/lib/$T" ]; then
+	echo "==> installing the Debian runtime (debian-runtime)"
+	mlpkg install debian-runtime || die "the Debian runtime could not be installed (no internet? try: sudo mlpkg update)"
+fi
+
+# 1. unpack every package
+n=0
+for f in "$@"; do
+	case "$f" in /*) ;; *) f=$(pwd)/$f ;; esac
+	[ -f "$f" ] || die "$f: no such file"
+	n=$((n + 1)); d=$W/$n
+	mkdir -p "$d/ar" "$d/ctl" "$d/root"
+	( cd "$d/ar" && ar x "$f" ) 2>/dev/null && [ -f "$d/ar/debian-binary" ] ||
+		die "$(basename "$f"): not a Debian package (.deb)"
+	tar -xf "$d"/ar/control.tar* -C "$d/ctl" || die "$(basename "$f"): damaged package (control)"
+	tar -xf "$d"/ar/data.tar* -C "$d/root" || die "$(basename "$f"): damaged package (data)"
+	rm -rf "$d/ar"
+	# MicroLinux keeps everything under /usr (/lib -> usr/lib, /usr/lib64 -> lib)
+	for l in bin sbin lib lib64 usr/lib64; do
+		[ -d "$d/root/$l" ] && [ ! -L "$d/root/$l" ] || continue
+		to=usr/${l#usr/}; case "$l" in lib64|usr/lib64) to=usr/lib ;; esac
+		mkdir -p "$d/root/$to" && cp -a "$d/root/$l/." "$d/root/$to/" && rm -rf "${d:?}/root/$l"
+	done
+	field() { awk -v k="$1:" '$1 == k { sub(/^[^:]*: */, ""); print; exit }' "$d/ctl/control"; }
+	pkg=$(field Package); ver=$(field Version); arch=$(field Architecture)
+	[ -n "$pkg" ] || die "$(basename "$f"): no package name"
+	case "$arch" in "$DA"|all) ;;
+		*) die "$(basename "$f") is made for $arch computers; this one is $DA: download the $DA version" ;;
+	esac
+	echo "$pkg" > "$d/name"; echo "$ver" > "$d/version"
+	field Description > "$d/description"
+	echo "==> $pkg $ver ($(basename "$f"))"
+done
+
+# 2. every library every program and library needs must be found
+dirs="/usr/lib/$T /lib/$T /usr/lib64 /usr/lib /lib64 /lib $DEB/usr/lib/$T $DEB/usr/lib"
+for i in $(seq $n); do dirs="$W/$i/root/usr/lib/$T $W/$i/root/lib/$T $W/$i/root/usr/lib $dirs"; done
+: > "$W/missing"
+for i in $(seq $n); do
+	find "$W/$i/root" -type f \( -perm -u+x -o -name '*.so*' \) | while read -r e; do
+		[ "$(head -c4 "$e" | od -An -c | tr -d ' ')" = 177ELF ] || continue
+		origin=$(dirname "$e")
+		rp=$(readelf -dW "$e" 2>/dev/null | sed -n 's/.*(R\(UN\)\{0,1\}PATH).*\[\(.*\)\]/\2/p' | tr ':' ' ' |
+			sed "s|\$ORIGIN|$origin|g; s|\${ORIGIN}|$origin|g")
+		for lib in $(readelf -dW "$e" 2>/dev/null | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do
+			found=
+			for dd in $rp $dirs; do [ -e "$dd/$lib" ] && { found=1; break; }; done
+			# a library that the package finds through its own RUNPATH at its final place
+			[ -n "$found" ] || echo "$lib (needed by ${e#$W/$i/root})" >> "$W/missing"
+		done
+	done
+done
+if [ -s "$W/missing" ]; then
+	echo "ml-deb-install: these libraries are missing, nothing was installed:" >&2
+	sort -u "$W/missing" | sed 's/^/    /' >&2
+	echo "Add the .deb packages that contain them (packages.debian.org: \"Search the contents of packages\") to the same installation." >&2
+	exit 1
+fi
+
+# 3. launchers for the programs, then one MicroLinux package per .deb
+LP="$(for i in $(seq $n); do printf '%s:' "$W/$i/root/usr/lib/$T"; done)/usr/lib/$T"
+for i in $(seq $n); do
+	r=$W/$i/root; pkg=$(cat "$W/$i/name")
+	for b in usr/bin usr/sbin usr/games usr/local/bin; do
+		[ -d "$r/$b" ] || continue
+		for p in "$r/$b"/*; do
+			[ -f "$p" ] || [ -L "$p" ] || continue
+			name=${p##*/}
+			# the program itself (a link: what it points to, inside the package)
+			if [ -L "$p" ]; then
+				t=$(readlink "$p")
+				case "$t" in
+					/*) real=$t ;;
+					*) real=$(cd "$(dirname "$p")" 2>/dev/null && cd "$(dirname "$t")" 2>/dev/null && pwd) || continue
+					   real=${real#$r}/${t##*/} ;;
+				esac
+				file=$r$real
+			else
+				real=/usr/lib/ml-deb/$pkg/$b/$name; file=$p
+			fi
+			[ -f "$file" ] && [ "$(head -c4 "$file" | od -An -c | tr -d ' ')" = 177ELF ] || continue
+			if LD_LIBRARY_PATH=$LP elfcheck "$file" 2>/dev/null | grep -q 'verdict: *NATIVE'; then
+				run="LD_LIBRARY_PATH=/usr/lib/$T\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH} exec $real \"\$@\""
+				how="MicroLinux's libraries"
+			else
+				run="DEB_LIBRARY_PATH=/usr/lib/$T exec deb-run $real \"\$@\""
+				how="Debian's libraries"
+			fi
+			if [ ! -L "$p" ]; then mkdir -p "$r/usr/lib/ml-deb/$pkg/$b"; mv "$p" "$r$real"; fi
+			rm -f "$p"
+			printf '#!/bin/sh\n# %s from the Debian package %s (ml-deb-install): runs with %s\n%s\n' \
+				"$name" "$pkg" "$how" "$run" > "$p"
+			chmod 755 "$p"
+			echo "    /$b/$name: runs with $how"
+		done
+	done
+	# what MicroLinux already has stays (its own files, other packages')
+	( cd "$r" && find . ! -type d ) | sed 's|^\.||' | while read -r f; do
+		if [ -e "$f" ] || [ -L "$f" ]; then
+			grep -qxF "$f" "/var/lib/mlpkg/installed/deb-$pkg.files" 2>/dev/null && continue   # reinstall
+			rm -f "$r$f"; echo "    $f: kept MicroLinux's"
+		fi
+	done
+	[ ! -f "$W/$i/ctl/postinst" ] || echo "    (its setup script was not run)"
+	mkdir -p "$r/.mlpkg"
+	{
+		echo "name=deb-$pkg"
+		echo "version=$(cat "$W/$i/version")"
+		echo "type=files"
+		echo "section=app"
+		echo "origin=deb"
+		echo "depends=debian-runtime"
+		echo "description=$(cat "$W/$i/description") (Debian package)"
+		echo "license=see /usr/share/doc/$pkg/copyright"
+	} > "$r/.mlpkg/info"
+	mksquashfs "$r" "$W/deb-$pkg.mlp" -comp xz -all-root -noappend -quiet >/dev/null ||
+		die "$pkg: could not make the package"
+done
+for i in $(seq $n); do
+	mlpkg install "$W/deb-$(cat "$W/$i/name").mlp"
+done

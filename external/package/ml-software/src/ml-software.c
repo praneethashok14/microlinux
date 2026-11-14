@@ -2,12 +2,14 @@
  * ml-software - MicroLinux Software: a graphical front end for mlpkg
  *
  *   ml-software [SEARCH]
+ *   ml-software --install-deb FILE.deb...    (opening a .deb in the file manager)
  *
  * Reads the package lists that "mlpkg update" downloaded (/var/cache/mlpkg:
  * INDEX.n, CATEGORIES.n) and the installed packages (/var/lib/mlpkg/installed),
  * and runs mlpkg through "sudo -A" (password dialog: ml-askpass) to refresh the
  * lists, install, remove and upgrade. mlpkg does all the work; its output is
- * shown live at the bottom of the window.
+ * shown live at the bottom of the window. "Install .deb..." installs Debian /
+ * Ubuntu packages with ml-deb-install, as packages named deb-NAME.
  */
 #include <gtk/gtk.h>
 #include <string.h>
@@ -16,6 +18,8 @@
 #define LIB "/var/lib/mlpkg/installed"
 #define RUN "/run/mlpkg/active"
 #define ASKPASS "/usr/libexec/ml-askpass"
+#define DEB_INSTALL "/usr/libexec/ml-deb-install"
+#define DEB_CATEGORY "From .deb files"
 
 typedef struct {
 	char *name, *version, *size, *desc, *deps, *section, *category;
@@ -130,6 +134,34 @@ static void load_data(void)
 		g_free(text);
 	}
 	g_ptr_array_free(indexes, TRUE);
+	/* installed packages no repository has (made from .deb files) */
+	d = g_dir_open(LIB, 0, NULL);
+	while (d && (n = g_dir_read_name(d))) {
+		if (!g_str_has_suffix(n, ".info"))
+			continue;
+		char *name = g_strndup(n, strlen(n) - 5), *inf = g_build_filename(LIB, n, NULL);
+		if (g_hash_table_contains(seen, name)) {
+			g_free(name);
+			g_free(inf);
+			continue;
+		}
+		char *origin = info_get(inf, "origin"), *desc = info_get(inf, "description");
+		Pkg *k = g_new0(Pkg, 1);
+		k->name = name;
+		k->installed = info_get(inf, "version");
+		k->version = g_strdup(k->installed ? k->installed : "");
+		k->size = g_strdup("");
+		k->desc = desc ? desc : g_strdup("");
+		k->deps = g_strdup("");
+		k->section = g_strdup("app");
+		k->category = g_strdup(g_strcmp0(origin, "deb") == 0 ? DEB_CATEGORY : "Other");
+		g_free(origin);
+		g_free(inf);
+		g_hash_table_add(seen, k->name);
+		g_ptr_array_add(pkgs, k);
+	}
+	if (d)
+		g_dir_close(d);
 	g_hash_table_destroy(seen);
 	g_hash_table_destroy(cats);
 }
@@ -191,15 +223,15 @@ static void finished(GObject *src, GAsyncResult *res, gpointer data)
 	reload();
 }
 
-/* sudo -A mlpkg ARGS...; WHAT describes it for the status line */
-static void mlpkg(const char *what, const char *const *args)
+/* sudo -A PROG ARGS...; WHAT describes it for the status line */
+static void run_root(const char *what, const char *prog, const char *const *args)
 {
 	if (busy)
 		return;
 	GPtrArray *a = g_ptr_array_new();
 	g_ptr_array_add(a, "sudo");
 	g_ptr_array_add(a, "-A");
-	g_ptr_array_add(a, "mlpkg");
+	g_ptr_array_add(a, (gpointer)prog);
 	for (int i = 0; args[i]; i++)
 		g_ptr_array_add(a, (gpointer)args[i]);
 	g_ptr_array_add(a, NULL);
@@ -224,6 +256,54 @@ static void mlpkg(const char *what, const char *const *args)
 	g_subprocess_wait_check_async(p, NULL, finished, g_strdup(what));
 }
 
+static void mlpkg(const char *what, const char *const *args)
+{
+	run_root(what, "mlpkg", args);
+}
+
+/* install .deb files (a NULL-terminated list of paths) */
+static void install_debs(char **files)
+{
+	if (!files || !files[0])
+		return;
+	char *what = files[1] ? g_strdup_printf("Installing %u .deb packages", g_strv_length(files))
+	                      : g_strdup_printf("Installing %s", strrchr(files[0], '/') ? strrchr(files[0], '/') + 1 : files[0]);
+	gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(details_btn), TRUE);   /* what it installs, what it needs */
+	g_free(current_cat);
+	current_cat = g_strdup(DEB_CATEGORY);
+	run_root(what, DEB_INSTALL, (const char *const *)files);
+	g_free(what);
+}
+
+static void on_install_deb(GtkButton *b, gpointer d)
+{
+	if (busy)
+		return;
+	GtkFileChooserNative *c = gtk_file_chooser_native_new("Install .deb packages", GTK_WINDOW(window),
+	                                                      GTK_FILE_CHOOSER_ACTION_OPEN, "_Install", "_Cancel");
+	GtkFileFilter *f = gtk_file_filter_new();
+	gtk_file_filter_set_name(f, "Debian / Ubuntu packages (.deb)");
+	gtk_file_filter_add_pattern(f, "*.deb");
+	gtk_file_filter_add_mime_type(f, "application/vnd.debian.binary-package");
+	gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(c), f);
+	gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(c), TRUE);
+	char *dl = g_build_filename(g_get_home_dir(), "Downloads", NULL);
+	if (g_file_test(dl, G_FILE_TEST_IS_DIR))
+		gtk_file_chooser_set_current_folder(GTK_FILE_CHOOSER(c), dl);
+	g_free(dl);
+	if (gtk_native_dialog_run(GTK_NATIVE_DIALOG(c)) == GTK_RESPONSE_ACCEPT) {
+		GSList *l = gtk_file_chooser_get_filenames(GTK_FILE_CHOOSER(c));
+		GPtrArray *a = g_ptr_array_new_with_free_func(g_free);
+		for (GSList *i = l; i; i = i->next)
+			g_ptr_array_add(a, i->data);
+		g_slist_free(l);
+		g_ptr_array_add(a, NULL);
+		install_debs((char **)a->pdata);
+		g_ptr_array_free(a, TRUE);
+	}
+	g_object_unref(c);
+}
+
 /* ------------------------------------------------------------------------ */
 /* package rows                                                             */
 /* ------------------------------------------------------------------------ */
@@ -235,6 +315,7 @@ static const char *cat_icon(const char *cat)
 		{"Command line", "utilities-terminal"},     {"Internet & network", "applications-internet"},
 		{"Disks", "drive-harddisk"},                {"Desktop & media", "applications-multimedia"},
 		{"Games", "applications-games"},            {"System", "applications-system"},
+		{DEB_CATEGORY, "application-x-deb"},
 		{"Installed", "emblem-ok-symbolic"},        {"Updates", "software-update-available"},
 		{"All", "view-app-grid-symbolic"},          {NULL, NULL}};
 	for (int i = 0; map[i][0]; i++)
@@ -479,6 +560,10 @@ int main(int argc, char **argv)
 	update_all = gtk_button_new_with_label("Update all");
 	g_signal_connect(update_all, "clicked", G_CALLBACK(on_update_all), NULL);
 	gtk_box_pack_start(GTK_BOX(top), update_all, FALSE, FALSE, 0);
+	GtkWidget *deb = gtk_button_new_with_mnemonic("Install ._deb…");
+	gtk_widget_set_tooltip_text(deb, "Install Debian or Ubuntu packages (.deb files) you downloaded");
+	g_signal_connect(deb, "clicked", G_CALLBACK(on_install_deb), NULL);
+	gtk_box_pack_start(GTK_BOX(top), deb, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(outer), top, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(outer), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL), FALSE, FALSE, 0);
 
@@ -535,9 +620,19 @@ int main(int argc, char **argv)
 	g_signal_connect(libs_check, "toggled", G_CALLBACK(on_filter), NULL);
 	gtk_container_add(GTK_CONTAINER(window), outer);
 	reload();
-	if (argc > 1)
+	gboolean debs = argc > 2 && strcmp(argv[1], "--install-deb") == 0;
+	if (argc > 1 && !debs)
 		gtk_entry_set_text(GTK_ENTRY(search), argv[1]);
 	gtk_widget_show_all(window);
+	if (debs) {
+		/* absolute paths: sudo starts the installer in another directory */
+		GPtrArray *a = g_ptr_array_new_with_free_func(g_free);
+		for (int i = 2; i < argc; i++)
+			g_ptr_array_add(a, g_canonicalize_filename(argv[i], NULL));
+		g_ptr_array_add(a, NULL);
+		install_debs((char **)a->pdata);
+		g_ptr_array_free(a, TRUE);
+	}
 	gtk_main();
 	return 0;
 }

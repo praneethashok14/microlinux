@@ -58,8 +58,8 @@ first, then marks it and runs it. A program that can't run here (made for
 another processor, for Windows, or for a Linux without glibc) or that stops
 with an error at once (e.g. a missing library) gets a message saying why.
 Programs made for RHEL 7/10 or Debian/Ubuntu start with that system's libraries
-when they need them, and `.rpm` / `.deb` packages install with `rpm` /
-`dpkg` in `sudo el10-chroot` / `sudo deb-chroot`
+when they need them. `.deb` packages install with **Software → Install .deb…**
+(or by double-clicking them), `.rpm` packages with `rpm` in `sudo el10-chroot`
 (see [EL10-DEBIAN-COMPAT.md](EL10-DEBIAN-COMPAT.md)).
 
 ## Settings

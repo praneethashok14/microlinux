@@ -52,6 +52,20 @@ a vendor's private `.so` files).
 
 ## Installing packages
 
+**.deb files, the easy way:** in **Software**, click **Install .deb…** and pick
+one or more `.deb` files, or double-click a `.deb` in the file manager. Each
+becomes the package `deb-NAME`: its programs show up in the menu and in the
+terminal like any others, Software lists it under *From .deb files*, and
+**Remove** there takes it away again. Its programs run with MicroLinux's own
+libraries when those are enough, otherwise with Debian's (`deb-run`). If a
+library it needs is missing, nothing is installed and Software names the
+library: download the `.deb` that contains it (packages.debian.org, "Search
+the contents of packages") and install both together. From a terminal:
+`sudo /usr/libexec/ml-deb-install FILE.deb...`. Packages' setup scripts are
+not run.
+
+**Inside the chroots** (for `.rpm` files, or to use `dpkg` itself):
+
 ```sh
 sudo el10-chroot                      # a RHEL 10 shell; /home, /tmp and /root are shared
 rpm -ivh /home/user/Downloads/NAME.rpm
