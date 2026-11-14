@@ -66,6 +66,7 @@ define DEBIAN_RUNTIME_INSTALL_IMAGES_CMDS
 	# the links update-alternatives would make (maintainer scripts are not run)
 	ln -sf gawk $(DEBIAN_RUNTIME_PKGROOT)/usr/bin/awk
 	ln -sf less $(DEBIAN_RUNTIME_PKGROOT)/usr/bin/pager
+	ln -sf which.debianutils $(DEBIAN_RUNTIME_PKGROOT)/usr/bin/which
 	[ -e $(DEBIAN_RUNTIME_PKGROOT)/usr/bin/sh ] || ln -s dash $(DEBIAN_RUNTIME_PKGROOT)/usr/bin/sh
 	mkdir -p $(DEBIAN_RUNTIME_PKGROOT)/.mlpkg $(DEBIAN_RUNTIME_PKGROOT)/dev $(DEBIAN_RUNTIME_PKGROOT)/proc \
 		$(DEBIAN_RUNTIME_PKGROOT)/sys $(DEBIAN_RUNTIME_PKGROOT)/tmp $(DEBIAN_RUNTIME_PKGROOT)/home \

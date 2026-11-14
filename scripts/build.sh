@@ -69,9 +69,10 @@ for A in $ARCHES; do
 	# Buildroot copies a local-source package once and doesn't notice later
 	# changes: rebuild ours when their source changed, and those of ours that
 	# depend on it (their per-package copy of it would replace the new one in
-	# the image: ml-software holds a copy of ml-settings)
+	# the image: ml-software holds a copy of ml-settings). The same for the
+	# runtimes made from pinned packages (a changed .lock or .mk).
 	OURS="ml-settings ml-software ml-installer"
-	for p in $OURS; do
+	for p in $OURS el7-runtime el10-runtime debian-runtime; do
 		h=$(cd "$W/src/external/package/$p" && find . -type f -exec sha256sum {} + | LC_ALL=C sort | sha256sum | cut -c1-16)
 		[ "$(cat "$O/.ml-src-$p" 2>/dev/null)" = "$h" ] && continue
 		make O="$O" "$p-dirclean" >/dev/null

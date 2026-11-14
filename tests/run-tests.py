@@ -542,8 +542,8 @@ def run_live_tests(args, rep):
         rep.check("10c", "EL10 compatibility suite (22 tests, real AlmaLinux 10.2 binaries, RPM install)", rc == 0,
                   (summary[0] if summary else out[-200:]) + " - tests/results/el10-compat.tap")
         # 10d-10e: Debian 13 binaries and .deb packages
-        rc, out = vm.sh("elfcheck /opt/debian/usr/bin/dpkg-query | grep -E 'verdict|needs glibc'; deb-run /opt/debian/usr/bin/dpkg-query --admindir=/opt/debian/var/lib/dpkg -W libc6", 30)
-        rep.check("10d", "Debian-built ELF binaries: elfcheck picks deb-run (dpkg needs Debian's libmd)",
+        rc, out = vm.sh("elfcheck /opt/debian/usr/bin/ls | grep -E 'verdict|needs glibc'; deb-run /opt/debian/usr/bin/dpkg-query --admindir=/opt/debian/var/lib/dpkg -W libc6", 30)
+        rep.check("10d", "Debian-built ELF binaries: elfcheck picks deb-run (ls needs Debian's libselinux), dpkg database",
                   "DEB-RUN" in out and "2.41-" in out, out.replace("\n", "; ")[:250])
         rc, out = vm.sh("/usr/share/microlinux/tests/deb-compat.sh 2>&1", 300)
         open(os.path.join(RES, "deb-compat.tap"), "w").write(out + "\n")

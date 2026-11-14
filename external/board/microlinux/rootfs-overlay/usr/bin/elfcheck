@@ -136,19 +136,31 @@ check_file() {
 			[ -n "$p" ] || continue
 			defined_versions "$p" | grep -qxF "$ver" || bad+=("$ver (from $lib)")
 		done < <(required_versions "$f")
+		# and every versioned function it uses: a library can have the version
+		# but not the function (OpenSSL built without ENGINE_init, ...)
+		if [ ${#bad[@]} -eq 0 ]; then
+			local provs=() sym
+			for lib in "${!where[@]}"; do [ "${where[$lib]}" != MISSING ] && provs+=("${where[$lib]}"); done
+			while read -r sym; do [ -n "$sym" ] && bad+=("$sym"); done < <(awk 'NR == FNR { have[$0]; next } !($0 in have)' \
+				<(for p in "${provs[@]}"; do readelf --dyn-syms -W "$p" 2>/dev/null | awk '$7 != "UND" && $8 ~ /@/ { s = $8; sub(/@@/, "@", s); print s }'; done) \
+				<(readelf --dyn-syms -W "$f" 2>/dev/null | awk '$7 == "UND" && $5 == "GLOBAL" && $8 ~ /@/ { print $8 }' | sort -u))
+		fi
 	}
 
 	# system libraries first; else a runtime with a new enough glibc, the one
-	# of the system the file was built on (GCC's .comment) first
+	# of the system the file was built on first: RHEL 10, Fedora and Ubuntu
+	# record their package in a .note.package note; GCC's .comment says
+	# "Red Hat" (EL7 has no note); Debian keeps neither
 	rt=""
 	walk ""
 	if [ ${#missing[@]} -gt 0 ] || [ ${#bad[@]} -gt 0 ]; then
-		local order n comment
-		comment=$(readelf -p .comment "$f" 2>/dev/null)
-		case "$comment" in
-			*Debian*|*Ubuntu*) order="deb 10 7" ;;
-			*"Red Hat"*|*AlmaLinux*|*CentOS*) order="7 10 deb" ;;
-			*) order="7 10 deb" ;;
+		local order n origin
+		origin="$(readelf -nW "$f" 2>/dev/null | grep -i 'packaging metadata') $(readelf -p .comment "$f" 2>/dev/null)"
+		case "$origin" in
+			*'"type":"deb"'*|*Debian*|*Ubuntu*) order="deb 10 7" ;;
+			*'"type":"rpm"'*) order="10 7 deb" ;;
+			*"Red Hat"*|*CentOS*) order="7 10 deb" ;;
+			*) order="7 deb 10" ;;
 		esac
 		for n in $order; do
 			[ -d "${RT[$n]}/${RTDIRS[$n]%% *}" ] || continue

@@ -81,9 +81,9 @@ gzip cpio less curl dpkg dash diffutils
 
 # never pulled in as a dependency (services, other language packs, the CA
 # store, which the runtimes link to the system one, ...)
-EXCLUDE = re.compile(r"^(systemd.*|libsystemd-shared|dbus.*|python3.*|perl.*|glibc-langpack-.*|"
+EXCLUDE = re.compile(r"^(systemd(?!-libs$).*|libsystemd-shared|dbus.*|python3.*|perl.*|glibc-langpack-.*|"
                      r"glibc-all-langpacks|glibc-gconv-extra|ca-certificates|"
-                     r"p11-kit.*|crypto-policies-scripts|tzdata|kernel.*|grub.*|"
+                     r"p11-kit-trust|crypto-policies-scripts|tzdata|kernel.*|grub.*|"
                      r"dracut.*|util-linux-core|shadow-utils|setup|basesystem|"
                      r"filesystem|almalinux-.*|redhat-release.*|libsemanage|"
                      r"policycoreutils|selinux-policy.*|authselect.*|pam|"
