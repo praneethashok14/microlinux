@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Install Package
+Comment=Install a package file (.deb, .rpm or .mlp) with Software
+Icon=system-software-install
+Exec=ml-software --install %F
+MimeType=application/vnd.debian.binary-package;application/x-rpm;application/x-microlinux-package;
+NoDisplay=true
+Categories=System;PackageManager;

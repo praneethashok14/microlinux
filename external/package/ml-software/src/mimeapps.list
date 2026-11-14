@@ -1,3 +1,5 @@
-# Software (ml-software) opens .deb packages: it installs them
+# Software (ml-software) opens package files: it installs them
 [Default Applications]
-application/vnd.debian.binary-package=ml-deb-install.desktop
+application/vnd.debian.binary-package=ml-file-install.desktop
+application/x-rpm=ml-file-install.desktop
+application/x-microlinux-package=ml-file-install.desktop

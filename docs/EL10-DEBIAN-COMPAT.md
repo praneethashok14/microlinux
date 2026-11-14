@@ -52,19 +52,27 @@ a vendor's private `.so` files).
 
 ## Installing packages
 
-**.deb files, the easy way:** in **Software**, click **Install .deb…** and pick
-one or more `.deb` files, or double-click a `.deb` in the file manager. Each
-becomes the package `deb-NAME`: its programs show up in the menu and in the
-terminal like any others, Software lists it under *From .deb files*, and
-**Remove** there takes it away again. Its programs run with MicroLinux's own
-libraries when those are enough, otherwise with Debian's (`deb-run`). If a
-library it needs is missing, nothing is installed and Software names the
-library: download the `.deb` that contains it (packages.debian.org, "Search
-the contents of packages") and install both together. From a terminal:
-`sudo /usr/libexec/ml-deb-install FILE.deb...`. Packages' setup scripts are
-not run.
+**Package files, the easy way:** in **Software**, click **Install .deb…**,
+**Install .rpm…** or **Install .mlp…** and pick one or more files, or
+double-click a `.deb`, `.rpm` or `.mlp` in the file manager. From a terminal:
+`sudo mlpkg install FILE.deb FILE.rpm FILE.mlp...`.
 
-**Inside the chroots** (for `.rpm` files, or to use `dpkg` itself):
+A `.deb` becomes the package `deb-NAME`, an `.rpm` `rpm-NAME` (a `.mlp` is a
+MicroLinux package already): its programs show up in the menu and in the
+terminal like any others, Software lists it under *From .deb files* / *From
+.rpm files*, and **Remove** there (or `sudo mlpkg remove deb-NAME`) takes it
+away again. Its programs run with MicroLinux's own libraries when those are
+enough, otherwise with those of their system (`deb-run`, `el10-run`, `el7-run`
+for RHEL 7 packages); its libraries go to a directory of their own
+(`/usr/lib/<arch>-linux-gnu`, `/usr/lib/ml-rpm`), never over MicroLinux's.
+If a library it needs is missing, nothing is installed and the message names
+the library: get the package that contains it (Debian: packages.debian.org,
+"Search the contents of packages"; RHEL/AlmaLinux: usually the package named
+like the library) and install both together. Packages' setup scripts are not
+run. The installer is `/usr/libexec/ml-file-install`, part of Software
+(`mlpkg install FILE` installs Software first when it is missing).
+
+**Inside the chroots** (to use `rpm` or `dpkg` themselves):
 
 ```sh
 sudo el10-chroot                      # a RHEL 10 shell; /home, /tmp and /root are shared

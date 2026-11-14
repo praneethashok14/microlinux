@@ -6,4 +6,10 @@
   <mime-type type="application/x-sharedlib">
     <sub-class-of type="application/x-executable"/>
   </mime-type>
+  <!-- MicroLinux packages (mlpkg): a squashfs image; Software installs them -->
+  <mime-type type="application/x-microlinux-package">
+    <comment>MicroLinux package</comment>
+    <generic-icon name="package-x-generic"/>
+    <glob pattern="*.mlp"/>
+  </mime-type>
 </mime-info>

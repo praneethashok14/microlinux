@@ -33,8 +33,10 @@ limactl shell builder git clone -b 2026.02.3 https://gitlab.com/buildroot.org/bu
 The build can't run directly on the shared Mac folder: APFS is
 case-insensitive (the kernel tree has files that differ only by case), and
 Lima's file sharing mangles symlinks. So the build runs on a raw ext4 disk image.
-In this checkout that image is `build-disk.img` in the project folder, linked
-from `~/.lima/_disks/mlbuild/datadisk`.
+In this checkout Lima's whole folder lives on the external drive MLBuild
+(`~/.lima` is a link to `/Volumes/MLBuild/lima`), so the build VM and the
+300 GiB build disk (`_disks/mlbuild/datadisk`) are there: keep the drive
+connected while building.
 
 `scripts/build.sh` regenerates the defconfigs, mirrors the source tree onto
 the build disk (Buildroot can't handle the space in the project path),

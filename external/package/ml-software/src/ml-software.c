@@ -2,14 +2,15 @@
  * ml-software - MicroLinux Software: a graphical front end for mlpkg
  *
  *   ml-software [SEARCH]
- *   ml-software --install-deb FILE.deb...    (opening a .deb in the file manager)
+ *   ml-software --install FILE...    (opening a .deb, .rpm or .mlp in the file manager)
  *
  * Reads the package lists that "mlpkg update" downloaded (/var/cache/mlpkg:
  * INDEX.n, CATEGORIES.n) and the installed packages (/var/lib/mlpkg/installed),
  * and runs mlpkg through "sudo -A" (password dialog: ml-askpass) to refresh the
  * lists, install, remove and upgrade. mlpkg does all the work; its output is
- * shown live at the bottom of the window. "Install .deb..." installs Debian /
- * Ubuntu packages with ml-deb-install, as packages named deb-NAME.
+ * shown live at the bottom of the window. "Install .deb/.rpm/.mlp..." install
+ * package files with ml-file-install: Debian / Ubuntu packages as deb-NAME,
+ * RHEL / AlmaLinux / Fedora packages as rpm-NAME, MicroLinux packages as they are.
  */
 #include <gtk/gtk.h>
 #include <string.h>
@@ -18,8 +19,10 @@
 #define LIB "/var/lib/mlpkg/installed"
 #define RUN "/run/mlpkg/active"
 #define ASKPASS "/usr/libexec/ml-askpass"
-#define DEB_INSTALL "/usr/libexec/ml-deb-install"
+#define FILE_INSTALL "/usr/libexec/ml-file-install"
 #define DEB_CATEGORY "From .deb files"
+#define RPM_CATEGORY "From .rpm files"
+#define MLP_CATEGORY "From .mlp files"
 
 typedef struct {
 	char *name, *version, *size, *desc, *deps, *section, *category;
@@ -154,7 +157,9 @@ static void load_data(void)
 		k->desc = desc ? desc : g_strdup("");
 		k->deps = g_strdup("");
 		k->section = g_strdup("app");
-		k->category = g_strdup(g_strcmp0(origin, "deb") == 0 ? DEB_CATEGORY : "Other");
+		k->category = g_strdup(g_strcmp0(origin, "deb") == 0   ? DEB_CATEGORY
+		                       : g_strcmp0(origin, "rpm") == 0 ? RPM_CATEGORY
+		                                                       : MLP_CATEGORY);
 		g_free(origin);
 		g_free(inf);
 		g_hash_table_add(seen, k->name);
@@ -261,30 +266,64 @@ static void mlpkg(const char *what, const char *const *args)
 	run_root(what, "mlpkg", args);
 }
 
-/* install .deb files (a NULL-terminated list of paths) */
-static void install_debs(char **files)
+/* category for package files of this name (.deb, .rpm, .mlp) */
+static const char *file_category(const char *path)
 {
-	if (!files || !files[0])
-		return;
-	char *what = files[1] ? g_strdup_printf("Installing %u .deb packages", g_strv_length(files))
-	                      : g_strdup_printf("Installing %s", strrchr(files[0], '/') ? strrchr(files[0], '/') + 1 : files[0]);
-	gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(details_btn), TRUE);   /* what it installs, what it needs */
-	g_free(current_cat);
-	current_cat = g_strdup(DEB_CATEGORY);
-	run_root(what, DEB_INSTALL, (const char *const *)files);
-	g_free(what);
+	return g_str_has_suffix(path, ".deb") ? DEB_CATEGORY : g_str_has_suffix(path, ".rpm") ? RPM_CATEGORY : MLP_CATEGORY;
 }
 
-static void on_install_deb(GtkButton *b, gpointer d)
+/* install package files (a NULL-terminated list of absolute paths), after
+ * asking: a package file can change anything on the system */
+static void install_files(char **files)
 {
+	if (busy || !files || !files[0])
+		return;
+	guint n = g_strv_length(files);
+	char *base = g_path_get_basename(files[0]);
+	char *title = n > 1 ? g_strdup_printf("Install %u packages?", n) : g_strdup_printf("Install “%s”?", base);
+	GtkWidget *q = gtk_message_dialog_new(GTK_WINDOW(window), GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_NONE,
+	                                      "%s", title);
+	g_free(title);
+	gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(q),
+		"Install only packages from sources you trust: a package can change anything on this computer. "
+		"Packages made for Debian/Ubuntu or RHEL/AlmaLinux/Fedora run with those systems' libraries when they need them.");
+	gtk_dialog_add_buttons(GTK_DIALOG(q), "_Cancel", GTK_RESPONSE_CANCEL, "_Install", GTK_RESPONSE_OK, NULL);
+	int r = gtk_dialog_run(GTK_DIALOG(q));
+	gtk_widget_destroy(q);
+	if (r == GTK_RESPONSE_OK) {
+		char *what = n > 1 ? g_strdup_printf("Installing %u packages", n) : g_strdup_printf("Installing %s", base);
+		gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(details_btn), TRUE);   /* what it installs, what it needs */
+		g_free(current_cat);
+		current_cat = g_strdup(file_category(files[0]));
+		run_root(what, FILE_INSTALL, (const char *const *)files);
+		g_free(what);
+	}
+	g_free(base);
+}
+
+/* "Install .deb...", "Install .rpm...", "Install .mlp...": DATA is the extension */
+static void on_install_file(GtkButton *b, gpointer data)
+{
+	const char *ext = data;
+	static const char *const kinds[][3] = {
+		{"deb", "Debian / Ubuntu packages (.deb)", "application/vnd.debian.binary-package"},
+		{"rpm", "RHEL / AlmaLinux / Rocky / Fedora packages (.rpm)", "application/x-rpm"},
+		{"mlp", "MicroLinux packages (.mlp)", "application/x-microlinux-package"}};
 	if (busy)
 		return;
-	GtkFileChooserNative *c = gtk_file_chooser_native_new("Install .deb packages", GTK_WINDOW(window),
-	                                                      GTK_FILE_CHOOSER_ACTION_OPEN, "_Install", "_Cancel");
+	char *title = g_strdup_printf("Install .%s packages", ext);
+	GtkFileChooserNative *c = gtk_file_chooser_native_new(title, GTK_WINDOW(window), GTK_FILE_CHOOSER_ACTION_OPEN,
+	                                                      "_Install", "_Cancel");
+	g_free(title);
 	GtkFileFilter *f = gtk_file_filter_new();
-	gtk_file_filter_set_name(f, "Debian / Ubuntu packages (.deb)");
-	gtk_file_filter_add_pattern(f, "*.deb");
-	gtk_file_filter_add_mime_type(f, "application/vnd.debian.binary-package");
+	for (size_t i = 0; i < G_N_ELEMENTS(kinds); i++)
+		if (strcmp(kinds[i][0], ext) == 0) {
+			char *pat = g_strdup_printf("*.%s", ext);
+			gtk_file_filter_set_name(f, kinds[i][1]);
+			gtk_file_filter_add_pattern(f, pat);
+			gtk_file_filter_add_mime_type(f, kinds[i][2]);
+			g_free(pat);
+		}
 	gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(c), f);
 	gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(c), TRUE);
 	char *dl = g_build_filename(g_get_home_dir(), "Downloads", NULL);
@@ -298,7 +337,7 @@ static void on_install_deb(GtkButton *b, gpointer d)
 			g_ptr_array_add(a, i->data);
 		g_slist_free(l);
 		g_ptr_array_add(a, NULL);
-		install_debs((char **)a->pdata);
+		install_files((char **)a->pdata);
 		g_ptr_array_free(a, TRUE);
 	}
 	g_object_unref(c);
@@ -315,7 +354,8 @@ static const char *cat_icon(const char *cat)
 		{"Command line", "utilities-terminal"},     {"Internet & network", "applications-internet"},
 		{"Disks", "drive-harddisk"},                {"Desktop & media", "applications-multimedia"},
 		{"Games", "applications-games"},            {"System", "applications-system"},
-		{DEB_CATEGORY, "application-x-deb"},
+		{DEB_CATEGORY, "application-x-deb"},        {RPM_CATEGORY, "application-x-rpm"},
+		{MLP_CATEGORY, "package-x-generic"},
 		{"Installed", "emblem-ok-symbolic"},        {"Updates", "software-update-available"},
 		{"All", "view-app-grid-symbolic"},          {NULL, NULL}};
 	for (int i = 0; map[i][0]; i++)
@@ -560,10 +600,16 @@ int main(int argc, char **argv)
 	update_all = gtk_button_new_with_label("Update all");
 	g_signal_connect(update_all, "clicked", G_CALLBACK(on_update_all), NULL);
 	gtk_box_pack_start(GTK_BOX(top), update_all, FALSE, FALSE, 0);
-	GtkWidget *deb = gtk_button_new_with_mnemonic("Install ._deb…");
-	gtk_widget_set_tooltip_text(deb, "Install Debian or Ubuntu packages (.deb files) you downloaded");
-	g_signal_connect(deb, "clicked", G_CALLBACK(on_install_deb), NULL);
-	gtk_box_pack_start(GTK_BOX(top), deb, FALSE, FALSE, 0);
+	static const char *const file_buttons[][3] = {
+		{"Install ._deb…", "deb", "Install Debian or Ubuntu packages (.deb files) you downloaded"},
+		{"Install .r_pm…", "rpm", "Install RHEL, AlmaLinux, Rocky or Fedora packages (.rpm files) you downloaded"},
+		{"Install .ml_p…", "mlp", "Install MicroLinux packages (.mlp files)"}};
+	for (size_t i = 0; i < G_N_ELEMENTS(file_buttons); i++) {
+		GtkWidget *fb = gtk_button_new_with_mnemonic(file_buttons[i][0]);
+		gtk_widget_set_tooltip_text(fb, file_buttons[i][2]);
+		g_signal_connect(fb, "clicked", G_CALLBACK(on_install_file), (gpointer)file_buttons[i][1]);
+		gtk_box_pack_start(GTK_BOX(top), fb, FALSE, FALSE, 0);
+	}
 	gtk_box_pack_start(GTK_BOX(outer), top, FALSE, FALSE, 0);
 	gtk_box_pack_start(GTK_BOX(outer), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL), FALSE, FALSE, 0);
 
@@ -620,7 +666,8 @@ int main(int argc, char **argv)
 	g_signal_connect(libs_check, "toggled", G_CALLBACK(on_filter), NULL);
 	gtk_container_add(GTK_CONTAINER(window), outer);
 	reload();
-	gboolean debs = argc > 2 && strcmp(argv[1], "--install-deb") == 0;
+	/* --install-deb: Software 1.1's name for it */
+	gboolean debs = argc > 2 && (strcmp(argv[1], "--install") == 0 || strcmp(argv[1], "--install-deb") == 0);
 	if (argc > 1 && !debs)
 		gtk_entry_set_text(GTK_ENTRY(search), argv[1]);
 	gtk_widget_show_all(window);
@@ -630,7 +677,7 @@ int main(int argc, char **argv)
 		for (int i = 2; i < argc; i++)
 			g_ptr_array_add(a, g_canonicalize_filename(argv[i], NULL));
 		g_ptr_array_add(a, NULL);
-		install_debs((char **)a->pdata);
+		install_files((char **)a->pdata);
 		g_ptr_array_free(a, TRUE);
 	}
 	gtk_main();

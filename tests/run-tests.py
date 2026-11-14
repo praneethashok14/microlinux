@@ -394,25 +394,43 @@ def run_live_tests(args, rep):
                             "ls /usr/bin/python3 /usr/bin/git 2>/dev/null || echo gone; readlink /usr/bin/wget; mlpkg list -i | grep -c 'installed' || true", 300)
             rep.check("P4", "Remove packages + autoremove dependencies (busybox wget restored)",
                       "gone" in out and "/bin/busybox" in out, out.replace("\n", "; ")[:200])
-            # Software's "Install .deb...": real Debian packages (jq needs libjq1, which needs libonig5)
-            rc, out = vm.sh("mlpkg install ml-software >/dev/null && ls /usr/libexec/ml-deb-install && "
-                            "B=https://snapshot.debian.org/archive/debian/20260913T000000Z/pool/main; "
+            # package files (Software's "Install .deb/.rpm/.mlp...", mlpkg install FILE): real
+            # packages whose programs need libraries from other packages
+            # this build's Software as a .mlp (the online repository, listed first, may have an older one)
+            mls = next(l.split("|")[2] for l in open(os.path.join(repo, "INDEX")) if l.startswith("ml-software|"))
+            rc, out = vm.sh(f"curl -sfo /tmp/mls.mlp {url}/{mls} && mlpkg install /tmp/mls.mlp | tail -n1; ls /usr/libexec/ml-file-install", 120)
+            rep.check("P5", "Install a .mlp file (mlpkg install FILE.mlp: this build's Software)",
+                      "installed ml-software" in out and "No such" not in out, out.replace("\n", "; ")[:200])
+            # .deb: jq needs libjq1, which needs libonig5
+            rc, out = vm.sh("B=https://snapshot.debian.org/archive/debian/20260913T000000Z/pool/main; "
                             "a=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/'); mkdir -p /tmp/debs && cd /tmp/debs && "
                             "curl -sSfL -O $B/j/jq/jq_1.7.1-6+deb13u3_$a.deb -O $B/j/jq/libjq1_1.7.1-6+deb13u3_$a.deb "
-                            "-O $B/libo/libonig/libonig5_6.9.9-1+b1_$a.deb && "
-                            "{ ml-deb-install jq_*.deb 2>&1 | grep -m1 -o 'libjq.so.1' || echo no-missing-message; "
-                            "ml-deb-install *.deb 2>&1 | grep -E 'runs with|installed'; "
+                            "-O $B/libo/libonig/libonig5_6.9.9-1+b1_$a.deb; "
+                            "mlpkg install jq_*.deb 2>&1 | grep -m1 -o 'libjq.so.1' || echo no-missing-message; "
+                            "mlpkg install /tmp/debs/*.deb 2>&1 | grep -E 'runs with|^installed'; "
                             "echo '{\"a\":42}' | jq .a; mlpkg list -i | grep -c '^deb-'; "
-                            "mlpkg remove deb-jq deb-libjq1 deb-libonig5 >/dev/null; ls /usr/bin/jq 2>&1 | grep -c 'No such'; }", 600)
+                            "mlpkg remove deb-jq deb-libjq1 deb-libonig5 >/dev/null; ls /usr/bin/jq 2>&1 | grep -c 'No such'", 600)
             lines = out.splitlines()
-            rep.check("P5", "Install .deb: real Debian packages (jq + its libraries) installed, run, removed; a missing library is named",
+            rep.check("P5b", "Install .deb files (mlpkg install: Debian jq + its libraries): installed, run, removed; a missing library is named",
                       "libjq.so.1" in out and "installed deb-jq" in out and "42" in lines and lines[-2:] == ["3", "1"],
+                      out.replace("\n", "; ")[:300])
+            # .rpm: AlmaLinux jq needs oniguruma (libonig.so.5); the 10.1 vault keeps these files
+            rc, out = vm.sh("t=$(uname -m | sed 's/x86_64/x86_64_v2/'); B=https://vault.almalinux.org/10.1/BaseOS/$t/os/Packages; "
+                            "mkdir -p /tmp/rpms && cd /tmp/rpms && "
+                            "curl -sSfL -O $B/jq-1.7.1-11.el10_1.0.2.$t.rpm -O $B/oniguruma-6.9.9-7.el10.$t.rpm; "
+                            "/usr/libexec/ml-file-install jq-*.rpm 2>&1 | grep -m1 -o 'libonig.so.5' || echo no-missing-message; "
+                            "mlpkg install /tmp/rpms/*.rpm 2>&1 | grep -E 'runs with|^installed'; "
+                            "echo '{\"a\":42}' | jq .a; mlpkg list -i | grep -c '^rpm-'; "
+                            "mlpkg remove rpm-jq rpm-oniguruma >/dev/null; ls /usr/bin/jq 2>&1 | grep -c 'No such'", 600)
+            lines = out.splitlines()
+            rep.check("P5c", "Install .rpm files (mlpkg install: AlmaLinux jq + oniguruma): installed, run, removed; a missing library is named",
+                      "libonig.so.5" in out and "installed rpm-jq" in out and "42" in lines and lines[-2:] == ["2", "1"],
                       out.replace("\n", "; ")[:300])
             rc, out = vm.sh("su user -c 'DISPLAY=:0 ml-software >/dev/null 2>&1 &'; "
                             f"for i in $(seq {30 * SCALE}); do su user -c 'DISPLAY=:0 xwininfo -root -tree' | grep -q '\"Software\"' && break; sleep 1; done; "
                             f"sleep {5 * SCALE}; su user -c 'DISPLAY=:0 xwininfo -root -tree' | grep -c '\"Software\"'", 120)
             shot = vm.screenshot("software")
-            rep.check("P6", "Software opens (with Install .deb)", out.strip().splitlines()[-1:] != ["0"] and rc == 0,
+            rep.check("P6", "Software opens (Install .deb / .rpm / .mlp)", out.strip().splitlines()[-1:] != ["0"] and rc == 0,
                       f"{out[-40:]}; screenshot {os.path.basename(shot)}")
             vm.sh("pkill -x ml-software")
             httpd.shutdown()

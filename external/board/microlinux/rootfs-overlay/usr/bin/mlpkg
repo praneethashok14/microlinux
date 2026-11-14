@@ -38,7 +38,9 @@ usage: mlpkg <command> [args]
   list [-a|-i]           list applications (-a: also libraries, -i: installed only)
   search <term>          search names and descriptions
   info <name>            show package details
-  install <name|file>... download, verify and install packages and their dependencies
+  install <name|file>... download, verify and install packages and their dependencies;
+                         a file can be a MicroLinux package (.mlp), a Debian / Ubuntu
+                         package (.deb) or a RHEL / AlmaLinux / Fedora package (.rpm)
   remove <name>...       uninstall packages
   upgrade [name]...      update installed packages that have a newer version
   autoremove             remove dependencies that nothing needs any more
@@ -384,11 +386,40 @@ resolve() {
 	echo "$name"
 }
 
+# .deb and .rpm files: ml-file-install (from the ml-software package) makes
+# MicroLinux packages of them; all of them in one go, so that their libraries
+# are checked together
+FILE_INSTALL=/usr/libexec/ml-file-install
+foreign_kind() {
+	case "$(head -c8 "$1" | od -An -tx1 | tr -d ' \n')" in
+		213c617263683e0a) echo deb ;;
+		edabeedb*) echo rpm ;;
+	esac
+}
+
 cmd_install() {
 	need_root
-	[ $# -gt 0 ] || die "usage: mlpkg install <name|file.mlp>..."
+	[ $# -gt 0 ] || die "usage: mlpkg install <name|file.mlp|file.deb|file.rpm>..."
+	foreign=
 	for a in "$@"; do
-		if [ -f "$a" ]; then install_one "$a"; continue; fi
+		if [ -f "$a" ] && [ -n "$(foreign_kind "$a")" ]; then
+			case "$a" in /*) foreign="$foreign
+$a" ;; *) foreign="$foreign
+$(pwd)/$a" ;; esac
+		fi
+	done
+	if [ -n "$foreign" ]; then
+		files=$foreign   # (shell variables are global: cmd_install below sets foreign)
+		[ -x "$FILE_INSTALL" ] || { echo "installing ml-software (it installs .deb and .rpm files)"; cmd_install ml-software; }
+		[ -x "$FILE_INSTALL" ] || die "ml-software has no $FILE_INSTALL: sudo mlpkg update && sudo mlpkg upgrade ml-software"
+		# one argument per line: file names may contain spaces
+		oldifs=$IFS; IFS='
+'; set -f
+		"$FILE_INSTALL" $files || exit 1
+		set +f; IFS=$oldifs
+	fi
+	for a in "$@"; do
+		if [ -f "$a" ]; then [ -n "$(foreign_kind "$a")" ] || install_one "$a"; continue; fi
 		RESOLVED=
 		order=$(resolve "$a") || exit 1
 		n=$(echo "$order" | grep -c .)

@@ -1,0 +1,209 @@
+#!/bin/sh
+# ml-file-install - install package files: Debian / Ubuntu (.deb), RHEL /
+# AlmaLinux / Rocky / Fedora (.rpm) and MicroLinux (.mlp)
+#
+#   sudo ml-file-install FILE...       (Software: "Install .deb/.rpm/.mlp...",
+#                                       mlpkg install FILE)
+#
+# A .mlp is installed by mlpkg as it is. A .deb becomes the mlpkg package
+# deb-NAME, an .rpm rpm-NAME, so they are listed in Software under Installed
+# and removed like any other package (sudo mlpkg remove deb-NAME). Their files
+# go to their usual places (/usr/share/..., /opt/...); their libraries to a
+# directory of their own (.deb: /usr/lib/<arch>-linux-gnu, .rpm:
+# /usr/lib/ml-rpm), so they never replace MicroLinux's. Their programs
+# (/usr/bin, /usr/games, ...) start through a small launcher in their place:
+# directly when MicroLinux's own libraries are enough (elfcheck says NATIVE),
+# otherwise with the libraries of their system (deb-run, el10-run or el7-run,
+# from the runtime packages, installed first when missing).
+#
+# Before installing, every library the packages need is looked up (in the
+# packages given together, MicroLinux, the runtimes and packages installed
+# before). If one is missing nothing is installed and the message names it:
+# add the package that contains it to the same installation.
+# Files that MicroLinux already has are left as they are. The packages'
+# setup scripts are not run.
+set -e
+me=${0##*/}
+die() { echo "$me: $*" >&2; exit 1; }
+[ $# -gt 0 ] || { sed -n '2,24s/^# \{0,1\}//p' "$0"; exit 2; }
+[ "$(id -u)" = 0 ] || die "must be run as root (sudo $me FILE)"
+export LC_ALL=C
+T=$(uname -m)-linux-gnu
+case "$(uname -m)" in x86_64) DA=amd64 ;; aarch64) DA=arm64 ;; *) DA=$(uname -m) ;; esac
+DEB=/opt/debian EL10=/opt/el10 EL7=/opt/el7
+# in /tmp: el10-chroot (which reads the .rpm files) sees the system's /tmp
+W=$(mktemp -d /tmp/ml-file-install.XXXXXX)
+trap 'rm -rf "$W"' EXIT
+
+kind() { # deb, rpm, mlp or nothing, from the file's first bytes
+	case "$(head -c8 "$1" | od -An -tx1 | tr -d ' \n')" in
+		213c617263683e0a) echo deb ;;     # "!<arch>\n"
+		edabeedb*) echo rpm ;;
+		68737173*) echo mlp ;;            # squashfs: "hsqs"
+	esac
+}
+runtime() { # NAME DIR: install the runtime package NAME unless DIR exists
+	[ -d "$2" ] && return 0
+	echo "==> installing $1"
+	mlpkg install "$1" || die "$1 could not be installed (no internet? try: sudo mlpkg update)"
+}
+
+# 1. unpack every package
+n=0; mlps=
+for f in "$@"; do
+	case "$f" in /*) ;; *) f=$(pwd)/$f ;; esac
+	[ -f "$f" ] || die "$f: no such file"
+	k=$(kind "$f")
+	case "$k" in
+		mlp) mlps="$mlps
+$f"; continue ;;
+		deb|rpm) ;;
+		*) die "$(basename "$f"): not a .deb, .rpm or .mlp package" ;;
+	esac
+	n=$((n + 1)); d=$W/$n
+	mkdir -p "$d/ctl" "$d/root"; echo "$k" > "$d/kind"
+	if [ "$k" = deb ]; then
+		runtime debian-runtime "$DEB/usr/lib/$T"
+		mkdir -p "$d/ar"
+		( cd "$d/ar" && ar x "$f" ) 2>/dev/null && [ -f "$d/ar/debian-binary" ] ||
+			die "$(basename "$f"): damaged Debian package"
+		tar -xf "$d"/ar/control.tar* -C "$d/ctl" || die "$(basename "$f"): damaged package (control)"
+		tar -xf "$d"/ar/data.tar* -C "$d/root" || die "$(basename "$f"): damaged package (data)"
+		rm -rf "$d/ar"
+		field() { awk -v k="$1:" '$1 == k { sub(/^[^:]*: */, ""); print; exit }' "$d/ctl/control"; }
+		pkg=$(field Package); ver=$(field Version); arch=$(field Architecture); desc=$(field Description)
+		[ "$arch" = all ] || [ "$arch" = "$DA" ] ||
+			die "$(basename "$f") is made for $arch computers; this one is $DA: download the $DA version"
+		[ ! -f "$d/ctl/postinst" ] || touch "$d/scripts"
+	else
+		# rpm and rpm2cpio of the RHEL 10 runtime: they read every current RPM format
+		runtime el10-runtime "$EL10/usr/lib64"
+		cp "$f" "$d/p.rpm"
+		el10-chroot rpm -qp --nosignature --qf '%{NAME}\n%{EPOCHNUM}:%{VERSION}-%{RELEASE}\n%{ARCH}\n%{SUMMARY}\n%{POSTIN}\n' \
+			"$d/p.rpm" > "$d/ctl/info" 2>/dev/null || die "$(basename "$f"): damaged RPM package"
+		el10-chroot sh -c 'cd "$1" && rpm2cpio "$2" | cpio -idm --quiet' _ "$d/root" "$d/p.rpm" ||
+			die "$(basename "$f"): damaged RPM package (files)"
+		rm -f "$d/p.rpm"
+		pkg=$(sed -n 1p "$d/ctl/info"); ver=$(sed -n 2p "$d/ctl/info" | sed 's/^0://')
+		arch=$(sed -n 3p "$d/ctl/info"); desc=$(sed -n 4p "$d/ctl/info")
+		[ "$(sed -n '5,$p' "$d/ctl/info" | tr -d '\n')" = "(none)" ] || touch "$d/scripts"
+		case "$arch" in noarch|"$(uname -m)"|"$(uname -m)"_v*) ;;
+			*) die "$(basename "$f") is made for $arch computers; this one is $(uname -m): download the $(uname -m) version" ;;
+		esac
+		# its libraries go to a directory of their own (MicroLinux: /usr/lib64 -> lib)
+		for l in lib64 usr/lib64; do
+			[ -d "$d/root/$l" ] && [ ! -L "$d/root/$l" ] || continue
+			mkdir -p "$d/root/usr/lib/ml-rpm"
+			find "$d/root/$l" -mindepth 1 -maxdepth 1 ! -type d -exec mv {} "$d/root/usr/lib/ml-rpm/" \;
+		done
+	fi
+	# MicroLinux keeps everything under /usr (/lib -> usr/lib, /usr/lib64 -> lib)
+	for l in bin sbin lib lib64 usr/lib64; do
+		[ -d "$d/root/$l" ] && [ ! -L "$d/root/$l" ] || continue
+		to=usr/${l#usr/}; case "$l" in lib64|usr/lib64) to=usr/lib ;; esac
+		mkdir -p "$d/root/$to" && cp -a "$d/root/$l/." "$d/root/$to/" && rm -rf "${d:?}/root/$l"
+	done
+	[ -n "$pkg" ] || die "$(basename "$f"): no package name"
+	echo "$pkg" > "$d/name"; echo "$ver" > "$d/version"; echo "$desc" > "$d/description"
+	echo "==> $pkg $ver ($(basename "$f"))"
+done
+
+# 2. every library every program and library needs must be found
+dirs="/usr/lib/$T /usr/lib/ml-rpm /usr/lib64 /usr/lib /lib64 /lib $DEB/usr/lib/$T $DEB/usr/lib $EL10/usr/lib64 $EL7/usr/lib64"
+for i in $(seq $n); do dirs="$W/$i/root/usr/lib/$T $W/$i/root/usr/lib/ml-rpm $W/$i/root/usr/lib $dirs"; done
+: > "$W/missing"
+for i in $(seq $n); do
+	find "$W/$i/root" -type f \( -perm -u+x -o -name '*.so*' \) | while read -r e; do
+		[ "$(head -c4 "$e" | od -An -c | tr -d ' ')" = 177ELF ] || continue
+		origin=$(dirname "$e")
+		rp=$(readelf -dW "$e" 2>/dev/null | sed -n 's/.*(R\(UN\)\{0,1\}PATH).*\[\(.*\)\]/\2/p' | tr ':' ' ' |
+			sed "s|\$ORIGIN|$origin|g; s|\${ORIGIN}|$origin|g")
+		for lib in $(readelf -dW "$e" 2>/dev/null | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do
+			found=
+			for dd in $rp $dirs; do [ -e "$dd/$lib" ] && { found=1; break; }; done
+			[ -n "$found" ] || echo "$lib (needed by ${e#$W/$i/root})" >> "$W/missing"
+		done
+	done
+done
+if [ -s "$W/missing" ]; then
+	echo "$me: these libraries are missing, nothing was installed:" >&2
+	sort -u "$W/missing" | sed 's/^/    /' >&2
+	echo "Add the packages that contain them to the same installation (Debian: packages.debian.org," >&2
+	echo "\"Search the contents of packages\"; RHEL/AlmaLinux: the package named like the library)." >&2
+	exit 1
+fi
+
+# 3. launchers for the programs, then one MicroLinux package per file
+LP=$(for i in $(seq $n); do printf '%s:%s:' "$W/$i/root/usr/lib/$T" "$W/$i/root/usr/lib/ml-rpm"; done)/usr/lib/$T:/usr/lib/ml-rpm
+for i in $(seq $n); do
+	r=$W/$i/root; pkg=$(cat "$W/$i/name"); k=$(cat "$W/$i/kind")
+	if [ "$k" = deb ]; then sys=Debian priv=/usr/lib/$T; else sys=RHEL priv=/usr/lib/ml-rpm; fi
+	for b in usr/bin usr/sbin usr/games usr/local/bin; do
+		[ -d "$r/$b" ] || continue
+		for p in "$r/$b"/*; do
+			[ -f "$p" ] || [ -L "$p" ] || continue
+			name=${p##*/}
+			# the program itself (a link: what it points to, inside the package)
+			if [ -L "$p" ]; then
+				t=$(readlink "$p")
+				case "$t" in
+					/*) real=$t ;;
+					*) real=$(cd "$(dirname "$p")" 2>/dev/null && cd "$(dirname "$t")" 2>/dev/null && pwd) || continue
+					   real=${real#$r}/${t##*/} ;;
+				esac
+				file=$r$real
+			else
+				real=/usr/lib/ml-$k/$pkg/$b/$name; file=$p
+			fi
+			[ -f "$file" ] && [ "$(head -c4 "$file" | od -An -c | tr -d ' ')" = 177ELF ] || continue
+			verdict=$(LD_LIBRARY_PATH=$LP elfcheck "$file" 2>/dev/null | sed -n 's/.*verdict: *\([A-Z0-9]*-*[A-Z]*\).*/\1/p' | head -n1)
+			if [ "$verdict" = NATIVE ]; then
+				run="LD_LIBRARY_PATH=$priv\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH} exec $real \"\$@\""
+				how="MicroLinux's libraries"
+			elif [ "$k" = deb ]; then
+				run="DEB_LIBRARY_PATH=$priv exec deb-run $real \"\$@\""; how="Debian's libraries"
+			elif [ "$verdict" = EL7-RUN ]; then
+				runtime el7-runtime "$EL7/usr/lib64"
+				run="EL7_LIBRARY_PATH=$priv exec el7-run $real \"\$@\""; how="RHEL 7's libraries"
+			else
+				run="EL10_LIBRARY_PATH=$priv exec el10-run $real \"\$@\""; how="RHEL 10's libraries"
+			fi
+			if [ ! -L "$p" ]; then mkdir -p "$r/usr/lib/ml-$k/$pkg/$b"; mv "$p" "$r$real"; fi
+			rm -f "$p"
+			printf '#!/bin/sh\n# %s from the %s package %s (ml-file-install): runs with %s\n%s\n' \
+				"$name" "$sys" "$pkg" "$how" "$run" > "$p"
+			chmod 755 "$p"
+			echo "    /$b/$name: runs with $how"
+		done
+	done
+	# what MicroLinux already has stays (its own files, other packages')
+	( cd "$r" && find . ! -type d ) | sed 's|^\.||' | while read -r f; do
+		if [ -e "$f" ] || [ -L "$f" ]; then
+			grep -qxF "$f" "/var/lib/mlpkg/installed/$k-$pkg.files" 2>/dev/null && continue   # reinstall
+			rm -f "$r$f"; echo "    $f: kept MicroLinux's"
+		fi
+	done
+	[ ! -f "$W/$i/scripts" ] || echo "    (its setup script was not run)"
+	if [ "$k" = deb ]; then rt=debian-runtime lic=/usr/share/doc/$pkg/copyright
+	else rt=el10-runtime lic=/usr/share/licenses/$pkg; fi
+	mkdir -p "$r/.mlpkg"
+	{
+		echo "name=$k-$pkg"
+		echo "version=$(cat "$W/$i/version")"
+		echo "type=files"
+		echo "section=app"
+		echo "origin=$k"
+		echo "depends=$rt"
+		echo "description=$(cat "$W/$i/description") ($sys package)"
+		echo "license=see $lic"
+	} > "$r/.mlpkg/info"
+	mksquashfs "$r" "$W/$k-$pkg.mlp" -comp xz -all-root -noappend -quiet >/dev/null ||
+		die "$pkg: could not make the package"
+done
+for i in $(seq $n); do
+	mlpkg install "$W/$(cat "$W/$i/kind")-$(cat "$W/$i/name").mlp"
+done
+# MicroLinux packages (.mlp) as they are
+echo "$mlps" | while IFS= read -r f; do
+	[ -z "$f" ] || mlpkg install "$f"
+done

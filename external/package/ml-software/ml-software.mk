@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-ML_SOFTWARE_VERSION = 1.1
+ML_SOFTWARE_VERSION = 1.2
 ML_SOFTWARE_SITE = $(BR2_EXTERNAL_MICROLINUX_PATH)/package/ml-software/src
 ML_SOFTWARE_SITE_METHOD = local
 ML_SOFTWARE_LICENSE = MIT
@@ -19,8 +19,9 @@ endef
 define ML_SOFTWARE_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 0755 $(@D)/ml-software $(TARGET_DIR)/usr/bin/ml-software
 	$(INSTALL) -D -m 0644 $(@D)/ml-software.desktop $(TARGET_DIR)/usr/share/applications/ml-software.desktop
-	$(INSTALL) -D -m 0755 $(@D)/ml-deb-install $(TARGET_DIR)/usr/libexec/ml-deb-install
-	$(INSTALL) -D -m 0644 $(@D)/ml-deb-install.desktop $(TARGET_DIR)/usr/share/applications/ml-deb-install.desktop
+	$(INSTALL) -D -m 0755 $(@D)/ml-file-install $(TARGET_DIR)/usr/libexec/ml-file-install
+	ln -sf ml-file-install $(TARGET_DIR)/usr/libexec/ml-deb-install
+	$(INSTALL) -D -m 0644 $(@D)/ml-file-install.desktop $(TARGET_DIR)/usr/share/applications/ml-file-install.desktop
 	$(INSTALL) -D -m 0644 $(@D)/mimeapps.list $(TARGET_DIR)/usr/share/applications/mimeapps.list
 endef
 
