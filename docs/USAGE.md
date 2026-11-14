@@ -11,7 +11,7 @@
 | Troubleshooting → Recovery | root shell, only logging and udev started |
 | Troubleshooting → Emergency | shell inside the initramfs, before the root filesystem is mounted |
 | Troubleshooting → Verbose | all kernel and init messages |
-| Troubleshooting → no optional modules | skip Firefox/EL7 packages |
+| Troubleshooting → no optional modules | skip Firefox and the EL7/EL10/Debian runtimes |
 | Troubleshooting → live without saved changes | ignore the `ml-persist` partition for this boot (`ml.nopersist`) |
 
 x86_64 images boot from BIOS and UEFI, as a CD/DVD or written to a USB stick
@@ -57,6 +57,10 @@ runs it. A downloaded one isn't marked as executable yet: **Run Program** asks
 first, then marks it and runs it. A program that can't run here (made for
 another processor, for Windows, or for a Linux without glibc) or that stops
 with an error at once (e.g. a missing library) gets a message saying why.
+Programs made for RHEL 7/10 or Debian/Ubuntu start with that system's libraries
+when they need them, and `.rpm` / `.deb` packages install with `rpm` /
+`dpkg` in `sudo el10-chroot` / `sudo deb-chroot`
+(see [EL10-DEBIAN-COMPAT.md](EL10-DEBIAN-COMPAT.md)).
 
 ## Settings
 
@@ -143,7 +147,7 @@ Two kinds of packages:
   of another package. Where it replaces a BusyBox applet (`wget`, `bc`, `diff`,
   …), the BusyBox version comes back when the package is removed.
   Servers (nginx, dropbear, tor, …) are never started automatically.
-- **Image packages** (Firefox, the EL7 runtime) stay compressed and are mounted
+- **Image packages** (Firefox, the EL7, EL10 and Debian runtimes) stay compressed and are mounted
   under `/opt/<name>`.
 
 On the live system, installed packages live in RAM (or on the persistence

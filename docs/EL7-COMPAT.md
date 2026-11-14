@@ -54,7 +54,7 @@ openssl).
 
 | Tool | What it does |
 |------|--------------|
-| `elfcheck FILE…` | Architecture, interpreter, RPATH/RUNPATH, every `NEEDED` library and where it resolves, the newest `GLIBC_x` it needs, and *every versioned symbol requirement* checked against the version definitions of the library that would actually load. Verdict: **NATIVE**, **EL7-RUN** or **FAIL** (with what's missing). |
+| `elfcheck FILE…` | Architecture, interpreter, RPATH/RUNPATH, every `NEEDED` library and where it resolves, the newest `GLIBC_x` it needs, and *every versioned symbol requirement* checked against the version definitions of the library that would actually load. Verdict: **NATIVE**, **EL7-RUN**, **EL10-RUN**, **DEB-RUN** (see [EL10-DEBIAN-COMPAT.md](EL10-DEBIAN-COMPAT.md)) or **FAIL** (with what's missing). |
 | `el7-run PROG ARGS…` | Starts PROG through EL7's own `ld-2.17.so` with `--library-path /opt/el7/usr/lib64`, so it gets exactly the libraries it was built for. Child processes run normally. |
 | `sudo el7-chroot [CMD]` | A full EL7 userspace in a private mount namespace: `/opt/el7` overlaid with tmpfs, `/dev /proc /sys /tmp /home /root /etc/ssl` and resolv.conf bound in. Use it for scripts and tools that expect a complete EL7 filesystem. `EL7_PERSIST=dir` keeps changes. |
 
@@ -75,7 +75,7 @@ runtime (for example a vendor's `libfoo.so`) can be added with
 `EL7_LIBRARY_PATH=/opt/vendor/lib el7-run ./tool` or `LD_LIBRARY_PATH`.
 
 To get more EL7 packages into the runtime, add their names to `PACKAGES` in
-`scripts/el7-lock.py`, run it, and rebuild. Inside `el7-chroot`, `rpm2cpio`
+`scripts/runtime-lock.py` (release `el7`), run it, and rebuild. Inside `el7-chroot`, `rpm2cpio`
 from the host can also unpack extra RPMs into `EL7_PERSIST`.
 
 ## Compatibility test suite

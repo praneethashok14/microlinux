@@ -7,8 +7,11 @@
   Buildroot builds its own cross toolchain, so the host distro only needs the
   basics:
   `build-essential git wget cpio unzip rsync bc file python3 perl patch gzip bzip2 xz-utils zstd
-  libncurses-dev cmake ninja-build rpm2cpio` (Ubuntu/Debian names).
-  `rpm2cpio` is used to unpack the pinned CentOS 7 RPMs for the `el7-runtime` package.
+  libncurses-dev cmake ninja-build rpm2cpio rpm dpkg` (Ubuntu/Debian names).
+  `rpm2cpio` unpacks the pinned CentOS 7 and AlmaLinux 10 RPMs for the
+  `el7-runtime` and `el10-runtime` packages, and `rpm` writes the rpm database
+  of `el10-runtime`. `dpkg-deb` (from `dpkg`) unpacks the Debian packages for
+  `debian-runtime`.
 - ~35 GB of disk space per architecture (~70 GB for both) and 8 GB of RAM.
 - Network access for the first build (sources are cached afterwards).
 
@@ -83,9 +86,13 @@ architecture.
 - Buildroot release pinned (2026.02.3 LTS). All package versions and SHA-256
   hashes come from it or from `external/package/*/*.hash`.
 - Kernel version pinned (6.18.62). Firefox pinned with Mozilla's published SHA-256.
-- CentOS 7 RPMs pinned by URL and SHA-256 (from the repository metadata) in
-  `external/package/el7-runtime/el7-<arch>.lock`. Regenerate deliberately with
-  `python3 scripts/el7-lock.py aarch64` / `x86_64`.
+- CentOS 7 / AlmaLinux 10 RPMs and Debian 13 packages pinned by URL and
+  SHA-256 (from the repository metadata) in
+  `external/package/{el7,el10,debian}-runtime/<name>-<arch>.lock`. Regenerate
+  deliberately with `python3 scripts/runtime-lock.py el7|el10|debian aarch64|x86_64`.
+  Debian comes from snapshot.debian.org, so its URLs never change. AlmaLinux
+  10.2 moves to vault.almalinux.org once 10.3 is out: then change `base` in the
+  script and run it again.
 - Images are built with fixed timestamps (`mksquashfs -mkfs-time 0 -all-time 0`,
   `cpio --reproducible`, `gzip -n`).
 
@@ -113,11 +120,13 @@ external/                             BR2_EXTERNAL tree
     ncurses5-compat/                  ncurses ABI 5 libraries
     firefox-bin/                      Firefox ESR → firefox.mlp
     el7-runtime/                      CentOS 7 runtime → el7-runtime.mlp
+    el10-runtime/                     AlmaLinux 10 runtime → el10-runtime.mlp
+    debian-runtime/                   Debian 13 runtime → debian-runtime.mlp
 scripts/build.sh                      build in the Lima VM
 scripts/gen-defconfigs.sh             fragments -> defconfigs
 scripts/progress.sh                   build progress bar
 scripts/run-qemu.sh                   run the ISO / installed disk
-scripts/el7-lock.py                   pin EL7 RPMs
+scripts/runtime-lock.py               pin the EL7 / EL10 / Debian packages
 tests/run-tests.py                    automated QEMU test suite
 ```
 

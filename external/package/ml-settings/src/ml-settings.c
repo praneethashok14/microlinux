@@ -1828,10 +1828,33 @@ static int run_program(const char *file)
 	char *dir = g_path_get_dirname(file), *log = g_build_filename(g_get_tmp_dir(), "ml-run-XXXXXX", NULL);
 	int fd = g_mkstemp(log);
 	char *abs = g_canonicalize_filename(file, NULL);
-	const char *argv[] = {abs, NULL};
+	/* a program made on another Linux (RHEL, Debian, Ubuntu, ...) may need that
+	 * system's libraries: elfcheck says which runtime, and it runs with it */
+	const char *ec[] = {"elfcheck", abs, NULL}, *runner = NULL;
+	const char *runtimes[][2] = {{"verdict:     EL7-RUN", "el7-run"}, {"verdict:     EL10-RUN", "el10-run"},
+	                             {"verdict:     DEB-RUN", "deb-run"}};
+	char *check = read_cmd(ec), *need = strstr(check, "(not installed:");
+	for (size_t i = 0; i < G_N_ELEMENTS(runtimes); i++)
+		if (strstr(check, runtimes[i][0]))
+			runner = runtimes[i][1];
+	if (!runner && need && strstr(check, "verdict:     FAIL")) {
+		char *end = strstr(need, " - "), *t = g_strdup_printf("“%s” needs libraries MicroLinux doesn't have", name);
+		char *m = g_strdup_printf("It may be made for another Linux. Install the compatibility packages "
+		                          "in Software (%.*s) and try again.",
+		                          end ? (int)(end - need - 16) : 0, need + 16);
+		message(GTK_MESSAGE_ERROR, t, m);
+		g_free(t); g_free(m); g_free(check);
+		unlink(log); g_free(log); g_free(dir); g_free(abs); g_free(name);
+		if (fd >= 0)
+			close(fd);
+		return 1;
+	}
+	g_free(check);
+	const char *argv[] = {runner ? runner : abs, abs, NULL};
 	GPid pid;
 	gint status = -1;
-	gboolean ok = g_spawn_async_with_fds(dir, (char **)argv, NULL, G_SPAWN_DO_NOT_REAP_CHILD, NULL, NULL, &pid, -1,
+	gboolean ok = g_spawn_async_with_fds(dir, (char **)(runner ? argv : argv + 1), NULL,
+	                                     G_SPAWN_DO_NOT_REAP_CHILD | G_SPAWN_SEARCH_PATH, NULL, NULL, &pid, -1,
 	                                     fd, fd, &e);
 	if (fd >= 0)
 		close(fd);

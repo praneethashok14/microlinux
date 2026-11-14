@@ -1,0 +1,13 @@
+config BR2_PACKAGE_DEBIAN_RUNTIME
+	bool "debian-runtime (Debian 13 userspace, as mlpkg module)"
+	depends on BR2_aarch64 || BR2_x86_64
+	help
+	  Debian 13 "trixie" (glibc 2.41) runtime built from the official
+	  Debian packages pinned in debian-<arch>.lock (from
+	  snapshot.debian.org, so the URLs never change). It is packaged as
+	  the mlpkg module debian-runtime, mounted at /opt/debian, and used
+	  by deb-run / deb-chroot for Debian and Ubuntu binaries that need
+	  Debian's libraries, and to install .deb packages (dpkg, with a
+	  dpkg database of the runtime's own packages).
+
+	  Requires dpkg-deb on the build host.

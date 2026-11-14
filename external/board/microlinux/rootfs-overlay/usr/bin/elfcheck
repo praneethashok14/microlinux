@@ -11,17 +11,26 @@
 #
 # Verdict per file:
 #   NATIVE   runs with the system glibc and libraries
-#   EL7-RUN  needs the EL7 runtime: run it with `el7-run FILE`
+#   EL7-RUN  needs the RHEL/CentOS 7 runtime: run it with `el7-run FILE`
+#   EL10-RUN needs the RHEL 10 runtime: run it with `el10-run FILE`
+#   DEB-RUN  needs the Debian 13 runtime: run it with `deb-run FILE`
 #   FAIL     cannot run here (wrong architecture or unresolvable libraries)
 # Exit status: 0 if every file is NATIVE, 1 otherwise.
 
 VERBOSE=0
 [ "$1" = -v ] && { VERBOSE=1; shift; }
-[ $# -gt 0 ] || { sed -n '2,20s/^# \{0,1\}//p' "$0"; exit 2; }
+[ $# -gt 0 ] || { sed -n '2,22s/^# \{0,1\}//p' "$0"; exit 2; }
 
-EL7=${EL7_ROOT:-/opt/el7}
 SYSDIRS="/usr/lib64 /usr/lib /lib64 /lib"
-EL7DIRS="$EL7/usr/lib64 $EL7/lib64"
+# compatibility runtimes: root, library directories, newest glibc they have,
+# verdict and command name
+T=$(uname -m)-linux-gnu
+declare -A RT=([7]=${EL7_ROOT:-/opt/el7} [10]=${EL10_ROOT:-/opt/el10} [deb]=${DEB_ROOT:-/opt/debian})
+declare -A RTDIRS=([7]="usr/lib64 lib64" [10]="usr/lib64" [deb]="usr/lib/$T usr/lib")
+declare -A RTGLIBC=([7]=2.17 [10]=2.39 [deb]=2.41)
+declare -A RTNAME=([7]=EL7 [10]=EL10 [deb]=DEB)
+declare -A RTCMD=([7]=el7-run [10]=el10-run [deb]=deb-run)
+declare -A RTPKG=([7]=el7-runtime [10]=el10-runtime [deb]=debian-runtime)
 command -v readelf >/dev/null || { echo "elfcheck: readelf (binutils) not found" >&2; exit 2; }
 
 # readelf's name for this system's machine type
@@ -53,7 +62,7 @@ resolve() { # lib file dirs...
 }
 
 check_file() {
-	local f=$1 hdr class machine type interp runpath rpath dirs el7dirs lib p status=NATIVE
+	local f=$1 hdr class machine type interp runpath rpath pre post lib p status=NATIVE
 	[ -e "$f" ] || { p=$(command -v "$f" 2>/dev/null) && f=$p; }
 	[ -f "$f" ] || { echo "${R}$1: no such file${N}"; return 1; }
 	f=$(readlink -f "$f")
@@ -86,72 +95,103 @@ check_file() {
 	runpath=$(rpaths "$f" RUNPATH); rpath=$(rpaths "$f" RPATH)
 	[ -n "$runpath" ] && echo "  runpath:     $runpath"
 	[ -n "$rpath" ] && echo "  rpath:       $rpath"
-	# glibc order: RPATH (if no RUNPATH), LD_LIBRARY_PATH, RUNPATH, system dirs
-	dirs=""; [ -z "$runpath" ] && dirs="$rpath"
-	dirs="$dirs ${LD_LIBRARY_PATH//:/ } $runpath $SYSDIRS"
-	el7dirs="$rpath $runpath $EL7DIRS $SYSDIRS"
+	# glibc order: RPATH (if no RUNPATH), LD_LIBRARY_PATH (el*-run: the
+	# runtime's directories), RUNPATH, system dirs
+	pre=""; [ -z "$runpath" ] && pre="$rpath"
+	post="$runpath $SYSDIRS"
 
-	# walk the full dependency tree
+	local maxglibc
+	maxglibc=$(required_versions "$f" | awk '$2 ~ /^GLIBC_2\./ {print $2}' | sort -V | tail -n1)
+
+	# the whole dependency tree and the file's symbol versions, with runtime N
+	# (or none): sets where, missing, rtonly, bad
 	declare -A seen=() where=()
-	local queue=("$f") cur missing=() el7only=()
-	while [ ${#queue[@]} -gt 0 ]; do
-		cur=${queue[0]}; queue=("${queue[@]:1}")
-		for lib in $(needed "$cur"); do
-			[ -n "${seen[$lib]}" ] && continue
-			seen[$lib]=1
-			if p=$(resolve "$lib" "$cur" $dirs); then
-				where[$lib]=$p; queue+=("$p")
-			elif p=$(resolve "$lib" "$cur" $el7dirs); then
-				where[$lib]="el7:$p"; el7only+=("$lib"); queue+=("$p")
-			else
-				where[$lib]=MISSING; missing+=("$lib")
-			fi
+	local missing=() rtonly=() bad=() rt
+	walk() {
+		local n=$1 root="" dirs d queue=("$f") cur lib p ver
+		seen=() where=() missing=() rtonly=() bad=()
+		if [ -n "$n" ]; then
+			root=${RT[$n]}; dirs=$pre
+			for d in ${RTDIRS[$n]}; do dirs="$dirs $root/$d"; done
+			dirs="$dirs $post"
+		else dirs="$pre ${LD_LIBRARY_PATH//:/ } $post"; fi
+		while [ ${#queue[@]} -gt 0 ]; do
+			cur=${queue[0]}; queue=("${queue[@]:1}")
+			for lib in $(needed "$cur"); do
+				[ -n "${seen[$lib]}" ] && continue
+				seen[$lib]=1
+				if p=$(resolve "$lib" "$cur" $dirs); then
+					where[$lib]=$p; queue+=("$p")
+					[ -n "$root" ] && [ "${p#$root/}" != "$p" ] && ! resolve "$lib" "$cur" $SYSDIRS >/dev/null && rtonly+=("$lib")
+				else
+					where[$lib]=MISSING; missing+=("$lib")
+				fi
+			done
 		done
-	done
+		while read -r lib ver; do
+			[ -n "$lib" ] || continue
+			p=${where[$lib]}
+			[ "$p" = MISSING ] && continue
+			[ -z "$p" ] && p=$(resolve "$lib" "$f" $dirs)
+			[ -n "$p" ] || continue
+			defined_versions "$p" | grep -qxF "$ver" || bad+=("$ver (from $lib)")
+		done < <(required_versions "$f")
+	}
+
+	# system libraries first; else a runtime with a new enough glibc, the one
+	# of the system the file was built on (GCC's .comment) first
+	rt=""
+	walk ""
+	if [ ${#missing[@]} -gt 0 ] || [ ${#bad[@]} -gt 0 ]; then
+		local order n comment
+		comment=$(readelf -p .comment "$f" 2>/dev/null)
+		case "$comment" in
+			*Debian*|*Ubuntu*) order="deb 10 7" ;;
+			*"Red Hat"*|*AlmaLinux*|*CentOS*) order="7 10 deb" ;;
+			*) order="7 10 deb" ;;
+		esac
+		for n in $order; do
+			[ -d "${RT[$n]}/${RTDIRS[$n]%% *}" ] || continue
+			[ -n "$maxglibc" ] && [ "$(printf '%s\n%s\n' "$maxglibc" "GLIBC_${RTGLIBC[$n]}" | sort -V | tail -n1)" != "GLIBC_${RTGLIBC[$n]}" ] && continue
+			walk "$n"
+			if [ ${#missing[@]} -eq 0 ] && [ ${#bad[@]} -eq 0 ]; then rt=$n; break; fi
+		done
+		[ -n "$rt" ] || walk ""
+	fi
 
 	echo "  libraries:"
 	for lib in $(needed "$f"); do
-		case "${where[$lib]}" in
-			MISSING) echo "    ${R}$lib => not found${N}" ;;
-			el7:*)   echo "    ${Y}$lib => ${where[$lib]#el7:} (EL7 runtime only)${N}" ;;
-			*)       echo "    $lib => ${where[$lib]}" ;;
-		esac
+		if [ "${where[$lib]}" = MISSING ]; then echo "    ${R}$lib => not found${N}"
+		elif printf '%s\n' "${rtonly[@]}" | grep -qxF "$lib"; then echo "    ${Y}$lib => ${where[$lib]} (${RTNAME[$rt]} runtime only)${N}"
+		else echo "    $lib => ${where[$lib]}"; fi
 	done
 	if [ $VERBOSE = 1 ]; then
 		echo "  indirect:"
 		for lib in "${!seen[@]}"; do
 			needed "$f" | grep -qxF "$lib" && continue
-			echo "    $lib => ${where[$lib]#el7:}"
+			echo "    $lib => ${where[$lib]}"
 		done | sort
 	fi
 
-	# symbol versions required by the file itself, checked against the provider
-	local bad=() maxglibc=""
-	while read -r lib ver; do
-		[ -n "$lib" ] || continue
-		case "$ver" in GLIBC_2.*) maxglibc=$(printf '%s\n%s\n' "$maxglibc" "$ver" | sort -V | tail -n1) ;; esac
-		p=${where[$lib]#el7:}
-		[ "$p" = MISSING ] && continue
-		[ -z "$p" ] && p=$(resolve "$lib" "$f" $dirs)
-		[ -n "$p" ] || continue
-		defined_versions "$p" | grep -qxF "$ver" || bad+=("$ver (from $lib)")
-	done < <(required_versions "$f")
 	[ -n "$maxglibc" ] && echo "  needs glibc: ${maxglibc#GLIBC_} or newer (system: $(/usr/lib/libc.so.6 2>/dev/null | sed -n '1s/.*version \([0-9.]*\).*/\1/p'))"
 	if [ ${#bad[@]} -gt 0 ]; then
 		echo "  ${R}unsatisfied symbol versions:${N}"
 		printf '    %s\n' "${bad[@]}"
 	fi
 
-	if [ ${#missing[@]} -gt 0 ]; then
+	local hint=""
+	for n in 7 10 deb; do [ -d "${RT[$n]}/${RTDIRS[$n]%% *}" ] || hint="$hint ${RTPKG[$n]}"; done
+	if [ -n "$rt" ]; then
+		if [ ${#rtonly[@]} -gt 0 ]; then echo "  ${Y}verdict:     ${RTNAME[$rt]}-RUN - needs ${rtonly[*]}; run with: ${RTCMD[$rt]} $f${N}"
+		else echo "  ${Y}verdict:     ${RTNAME[$rt]}-RUN - run with: ${RTCMD[$rt]} $f${N}"; fi
+		return 1
+	elif [ ${#missing[@]} -gt 0 ]; then
 		echo "  ${R}verdict:     FAIL - missing: ${missing[*]}${N}"
-		[ -d "$EL7/usr/lib64" ] || echo "               (EL7 runtime not installed: sudo mlpkg install el7-runtime)"
+		[ -n "$hint" ] && echo "               (not installed:$hint - sudo mlpkg install$hint)"
 		return 1
 	elif [ ${#bad[@]} -gt 0 ]; then
-		if [ -d "$EL7/usr/lib64" ]; then echo "  ${Y}verdict:     EL7-RUN - run with: el7-run $f${N}"
-		else echo "  ${R}verdict:     FAIL - symbol versions not provided by system libraries${N}"; fi
-		return 1
-	elif [ ${#el7only[@]} -gt 0 ]; then
-		echo "  ${Y}verdict:     EL7-RUN - needs ${el7only[*]}; run with: el7-run $f${N}"
+		echo "  ${R}verdict:     FAIL - symbol versions not provided by system libraries${N}"
+		[ -n "$hint" ] && echo "               (not installed:$hint - sudo mlpkg install$hint)"
 		return 1
 	elif [ $status = FAIL ]; then
 		echo "  ${R}verdict:     FAIL${N}"; return 1

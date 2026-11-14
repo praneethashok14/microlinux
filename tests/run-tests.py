@@ -356,7 +356,7 @@ def run_live_tests(args, rep):
         # tools
         rc, out = vm.sh("for c in busybox bash vi nano htop lspci lsusb lsblk dmidecode parted mkfs.ext4 mkfs.vfat e2fsck "
                         "ip iw wpa_supplicant udhcpc curl ssh sudo adduser passwd chmod logread syslogd modprobe strace readelf "
-                        "elfcheck el7-run mlpkg netcfg ml-install bluetoothctl xrandr; do command -v $c >/dev/null || echo MISSING:$c; done; echo checked")
+                        "elfcheck el7-run el10-run el10-chroot deb-run deb-chroot mlpkg netcfg ml-install bluetoothctl xrandr; do command -v $c >/dev/null || echo MISSING:$c; done; echo checked")
         rep.check("T", "Essential utilities present", "MISSING" not in out, out.replace("\n", " ")[:200])
         rc, out = vm.sh("logger -t mltest hello-log; sleep 1; ml-log | grep -c hello-log")
         rep.check("T2", "System logging (syslogd/logread)", rc == 0 and out.strip().endswith("1"), out)
@@ -372,7 +372,7 @@ def run_live_tests(args, rep):
 
         # packages
         rc, out = vm.sh("mlpkg list -i; mlpkg verify")
-        rep.check("P", "Package manager: modules active and verified", rc == 0 and "firefox" in out and "el7-runtime" in out
+        rep.check("P", "Package manager: modules active and verified", rc == 0 and "firefox" in out and "el7-runtime" in out and "el10-runtime" in out and "debian-runtime" in out
                   and "CORRUPT" not in out if not args.no_browser else rc == 0, out.replace("\n", "; ")[:250])
 
         # package repository: install from ../microlinux-repo/<arch> (served over HTTP), use, remove
@@ -532,6 +532,24 @@ def run_live_tests(args, rep):
         open(os.path.join(RES, "el7-compat.tap"), "w").write(out + "\n")
         summary = [l for l in out.splitlines() if l.startswith("# ") and "passed" in l]
         rep.check("10", "EL7 compatibility suite (20 tests, real CentOS 7 binaries)", rc == 0, (summary[0] if summary else out[-200:]) + " - tests/results/el7-compat.tap")
+        # 10b-10c: RHEL 10 (AlmaLinux 10.2) binaries and RPMs
+        rc, out = vm.sh("elfcheck /opt/el10/usr/bin/rpm /opt/el10/usr/bin/tree | grep -E 'verdict|needs glibc'; el10-run /opt/el10/usr/bin/tree --version", 30)
+        rep.check("10b", "EL10-built ELF binaries: elfcheck picks native or el10-run (rpm needs EL10 librpm)",
+                  "EL10-RUN" in out and "tree v2" in out, out.replace("\n", "; ")[:250])
+        rc, out = vm.sh("/usr/share/microlinux/tests/el10-compat.sh 2>&1", 300)
+        open(os.path.join(RES, "el10-compat.tap"), "w").write(out + "\n")
+        summary = [l for l in out.splitlines() if l.startswith("# ") and "passed" in l]
+        rep.check("10c", "EL10 compatibility suite (22 tests, real AlmaLinux 10.2 binaries, RPM install)", rc == 0,
+                  (summary[0] if summary else out[-200:]) + " - tests/results/el10-compat.tap")
+        # 10d-10e: Debian 13 binaries and .deb packages
+        rc, out = vm.sh("elfcheck /opt/debian/usr/bin/dpkg-query | grep -E 'verdict|needs glibc'; deb-run /opt/debian/usr/bin/dpkg-query --admindir=/opt/debian/var/lib/dpkg -W libc6", 30)
+        rep.check("10d", "Debian-built ELF binaries: elfcheck picks deb-run (dpkg needs Debian's libmd)",
+                  "DEB-RUN" in out and "2.41-" in out, out.replace("\n", "; ")[:250])
+        rc, out = vm.sh("/usr/share/microlinux/tests/deb-compat.sh 2>&1", 300)
+        open(os.path.join(RES, "deb-compat.tap"), "w").write(out + "\n")
+        summary = [l for l in out.splitlines() if l.startswith("# ") and "passed" in l]
+        rep.check("10e", "Debian compatibility suite (22 tests, real Debian 13 binaries, .deb install)", rc == 0,
+                  (summary[0] if summary else out[-200:]) + " - tests/results/deb-compat.tap")
 
         if args.install:
             # what the graphical installer sees (as the live user, through sudo)

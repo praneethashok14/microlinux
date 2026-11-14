@@ -18,6 +18,10 @@ A tiny, fully functional Linux distribution for **x86_64** and **aarch64**
   architecture natively (glibc symbol versions + compat libraries), with an
   exact EL7 runtime (`el7-run`, `el7-chroot`) for programs that need EL7-only
   libraries. The test suite uses real CentOS 7 RPMs.
+- **RHEL 10 and Debian/Ubuntu programs and packages**: runtimes from
+  AlmaLinux 10.2 (`el10-run`, `el10-chroot`, with `rpm`) and Debian 13
+  (`deb-run`, `deb-chroot`, with `dpkg`). `elfcheck` tells which one a
+  program needs, and `.rpm` / `.deb` packages install inside the chroots.
 - **Packages**: `mlpkg` with dependencies and an online repository of about 90
   applications (Python, Perl, Ruby, git, gdb, vim, tmux, nmap, mpv, …) at
   [praneethashok14/microlinux-packagerepo](https://github.com/praneethashok14/microlinux-packagerepo).
@@ -78,6 +82,7 @@ The ISO checksums are GPG-signed (`out/SHA256SUMS-<arch>.asc`).
 - [docs/BUILD.md](docs/BUILD.md): build environment, reproducibility, layout
 - [docs/USAGE.md](docs/USAGE.md): using the system (network, Wi-Fi, Bluetooth, packages, install)
 - [docs/EL7-COMPAT.md](docs/EL7-COMPAT.md): EL7 compatibility layer and how to test your binaries
+- [docs/EL10-DEBIAN-COMPAT.md](docs/EL10-DEBIAN-COMPAT.md): RHEL 10 and Debian programs, `.rpm` and `.deb` packages
 - [docs/SECUREBOOT.md](docs/SECUREBOOT.md): Secure Boot, signed packages, verifying downloads, keys
 - [docs/TESTING.md](docs/TESTING.md): test suite and latest results
 - [docs/LICENSES.md](docs/LICENSES.md): licensing of bundled components

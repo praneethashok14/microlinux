@@ -1,31 +1,43 @@
 #!/bin/sh
-# el7-run - run a program with the exact RHEL/CentOS 7 runtime (glibc 2.17)
+# el7-run / el10-run / deb-run - run a program with an exact runtime of the
+# system it was built for
 #
-#   el7-run PROGRAM [ARGS...]
+#   el7-run PROGRAM [ARGS...]      RHEL/CentOS 7 (glibc 2.17), /opt/el7
+#   el10-run PROGRAM [ARGS...]     RHEL 10 / AlmaLinux 10 (glibc 2.39), /opt/el10
+#   deb-run PROGRAM [ARGS...]      Debian 13 / Ubuntu (glibc 2.41), /opt/debian
 #
-# The program is started through the EL7 dynamic loader from /opt/el7 with the
-# EL7 library directories first, so it gets the libraries it was built against
-# (libssl.so.10, libreadline.so.6, libmpfr.so.4, ...). Libraries not in the
-# EL7 runtime fall back to the system directories.
-# Programs that the EL7 program itself executes run normally (system loader).
-# For a complete EL7 userspace (shell, scripts, rpm layouts) use el7-chroot.
-R=${EL7_ROOT:-/opt/el7}
-[ $# -gt 0 ] || { sed -n '2,12s/^# \{0,1\}//p' "$0"; exit 2; }
-if [ ! -d "$R/usr/lib64" ]; then
-	echo "el7-run: EL7 runtime not found at $R (sudo mlpkg install el7-runtime)" >&2
+# The program is started through that system's dynamic loader with its
+# library directories first, so it gets the libraries it was built against
+# (EL7: libssl.so.10, libreadline.so.6, ...; EL10: libcrypt.so.2, ...).
+# Libraries not in the runtime fall back to the system directories.
+# Programs that the program itself executes run normally (system loader).
+# For a complete userspace (shell, scripts, rpm/dpkg) use el7-chroot,
+# el10-chroot or deb-chroot.
+me=${0##*/}
+T=$(uname -m)-linux-gnu
+case "$me" in
+	el10-*) N=EL10 R=${EL10_ROOT:-/opt/el10} XLIB=$EL10_LIBRARY_PATH L="usr/lib64" pkg=el10-runtime ;;
+	deb-*)  N=Debian R=${DEB_ROOT:-/opt/debian} XLIB=$DEB_LIBRARY_PATH L="usr/lib/$T usr/lib" pkg=debian-runtime ;;
+	*)      N=EL7 R=${EL7_ROOT:-/opt/el7} XLIB=$EL7_LIBRARY_PATH L="usr/lib64" pkg=el7-runtime ;;
+esac
+[ $# -gt 0 ] || { sed -n '2,16s/^# \{0,1\}//p' "$0"; exit 2; }
+if [ ! -d "$R/${L%% *}" ]; then
+	echo "$me: $N runtime not found at $R (sudo mlpkg install $pkg)" >&2
 	exit 1
 fi
-LDSO=$(ls "$R"/usr/lib64/ld-2.*.so 2>/dev/null | head -n1)
-[ -x "$LDSO" ] || { echo "el7-run: EL7 dynamic loader not found in $R/usr/lib64" >&2; exit 1; }
+LDSO=$(ls "$R"/usr/lib64/ld-2.*.so "$R"/usr/lib/$T/ld-linux-*.so.* "$R"/usr/lib64/ld-linux-*.so.* "$R"/usr/lib/ld-linux-*.so.* 2>/dev/null | head -n1)
+[ -x "$LDSO" ] || { echo "$me: $N dynamic loader not found in $R" >&2; exit 1; }
 
 prog=$1; shift
 case "$prog" in
 	*/*) ;;
-	*) p=$(PATH="$PATH:$R/usr/bin:$R/usr/sbin" command -v "$prog") || { echo "el7-run: $prog: not found" >&2; exit 127; }
+	*) p=$(PATH="$PATH:$R/usr/bin:$R/usr/sbin" command -v "$prog") || { echo "$me: $prog: not found" >&2; exit 127; }
 	   prog=$p ;;
 esac
 
-# no locale archive in the runtime: C locale, and EL7's own iconv modules
-export LC_ALL=C
-export GCONV_PATH="$R/usr/lib64/gconv"
-exec "$LDSO" --library-path "$R/usr/lib64:$R/lib64${EL7_LIBRARY_PATH:+:$EL7_LIBRARY_PATH}" "$prog" "$@"
+LP=; for d in $L; do LP="$LP${LP:+:}$R/$d"; done
+# EL7: no locale archive in the runtime, C locale; the others have C.UTF-8.
+# The system's own iconv modules.
+if [ $N = EL7 ]; then export LC_ALL=C; else export LC_ALL=C.UTF-8 LOCPATH="$R/usr/lib/locale"; fi
+export GCONV_PATH="$R/${L%% *}/gconv"
+exec "$LDSO" --library-path "$LP${XLIB:+:$XLIB}" "$prog" "$@"

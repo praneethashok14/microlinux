@@ -1,0 +1,15 @@
+config BR2_PACKAGE_EL10_RUNTIME
+	bool "el10-runtime (AlmaLinux 10 userspace, as mlpkg module)"
+	depends on BR2_aarch64 || BR2_x86_64
+	help
+	  RHEL 10 compatible (glibc 2.39) runtime built from the official
+	  AlmaLinux 10.2 RPMs pinned in el10-<arch>.lock (x86_64: the
+	  x86_64_v2 rebuild, which also runs on CPUs without AVX2). It is
+	  packaged as the mlpkg module el10-runtime, mounted at /opt/el10,
+	  and used by el10-run / el10-chroot for binaries that need EL10
+	  libraries (libcrypt.so.2, libtinfo.so.6, libpcre2-8.so.0, ...)
+	  and to install EL10 RPMs (rpm, with an rpm database of the
+	  runtime's own packages).
+
+	  Requires rpm2cpio and cpio on the build host, and rpm for the
+	  rpm database.
