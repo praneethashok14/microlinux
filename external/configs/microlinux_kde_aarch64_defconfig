@@ -510,3 +510,7 @@ BR2_PACKAGE_ML_SOFTWARE=y
 # --- GPU firmware (x86_64; the drivers are in the base system)  [category: System]
 BR2_PACKAGE_FIRMWARE_AMDGPU=y
 BR2_PACKAGE_FIRMWARE_NVIDIA=y
+
+# --- Compatibility libraries for programs made for other systems  [category: System]
+# Qt 5.15 (libQt5Core, libQt5Gui, libQt5Widgets, ...) for programs made for Qt 5
+BR2_PACKAGE_QT5_BASE=y
