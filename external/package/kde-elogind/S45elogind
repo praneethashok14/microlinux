@@ -1,0 +1,14 @@
+#!/bin/sh
+# elogind: seats and sessions (logind) for KWin, polkit and the login screen
+case "$1" in
+	start)
+		mkdir -p /sys/fs/cgroup
+		mountpoint -q /sys/fs/cgroup || mount -t cgroup2 -o nsdelegate cgroup2 /sys/fs/cgroup
+		printf "Starting elogind: "
+		/usr/libexec/elogind/elogind --daemon && echo OK || echo FAIL ;;
+	stop)
+		printf "Stopping elogind: "
+		killall elogind 2>/dev/null && echo OK || echo FAIL ;;
+	restart) "$0" stop; "$0" start ;;
+	*) echo "usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

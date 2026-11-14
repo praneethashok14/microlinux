@@ -1,0 +1,10 @@
+config BR2_PACKAGE_KDE_APPSTREAM
+	bool "kde-appstream"
+	select BR2_PACKAGE_LIBGLIB2
+	select BR2_PACKAGE_LIBXML2
+	select BR2_PACKAGE_LIBYAML
+	select BR2_PACKAGE_LIBCURL
+	select BR2_PACKAGE_LIBXMLB
+	select BR2_PACKAGE_ZSTD
+	help
+	  AppStream 1.2 with AppStreamQt, for Discover.

@@ -1,0 +1,8 @@
+#!/bin/sh
+# SDDM: the login screen (after elogind, S45)
+case "$1" in
+	start) printf "Starting sddm: "; start-stop-daemon -S -b -m -p /run/sddm.pid -x /usr/bin/sddm && echo OK || echo FAIL ;;
+	stop) printf "Stopping sddm: "; start-stop-daemon -K -p /run/sddm.pid && echo OK || echo FAIL ;;
+	restart) "$0" stop; sleep 1; "$0" start ;;
+	*) echo "usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

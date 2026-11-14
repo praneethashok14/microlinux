@@ -1,0 +1,6 @@
+config BR2_PACKAGE_KDE_QCORO
+	bool "kde-qcoro"
+	select BR2_PACKAGE_QT6DECLARATIVE
+	select BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	help
+	  QCoro 0.13: C++20 coroutines for Qt.

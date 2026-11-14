@@ -1,0 +1,10 @@
+config BR2_PACKAGE_KDE_ELOGIND
+	bool "kde-elogind"
+	select BR2_PACKAGE_LIBCAP
+	select BR2_PACKAGE_DBUS
+	select BR2_PACKAGE_LINUX_PAM
+	select BR2_PACKAGE_UTIL_LINUX
+	select BR2_PACKAGE_UTIL_LINUX_LIBMOUNT
+	help
+	  elogind 257: logind (seats, sessions, power keys) without
+	  systemd, for KWin, polkit, SDDM and Plasma on BusyBox init.

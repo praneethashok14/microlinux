@@ -1,2 +1,2 @@
-# Locally computed (KDE tarballs: matches the .sha256 published next to them)
-sha256  22873204292ddb757e5a0a57004c57debe1285cd0fd4e796d07e9de2402e60c3  kidletime-6.30.0.tar.xz
+# from https://download.kde.org/stable/frameworks/6.32/kidletime-6.32.0.tar.xz.sha256
+sha256  a7b53ff5a5f80bf8b8869b377de11594c9e5bccf84064c96efd6bab16974c1be  kidletime-6.32.0.tar.xz

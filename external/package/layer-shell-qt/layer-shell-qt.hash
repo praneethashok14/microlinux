@@ -1,2 +1,2 @@
-# Locally computed (matches the .sha256 published next to it)
-sha256  6844fee55b8b7cbc320cd8308b51595ef830d5a99b4d355b0fd59f88feab2c11  layer-shell-qt-6.5.5.tar.xz
+# from https://download.kde.org/stable/plasma/6.8.3/layer-shell-qt-6.8.3.tar.xz.sha256
+sha256  af3e56be10eb95a5993600449d6c811a08d491f7905c40a1203040b5baf98f9e  layer-shell-qt-6.8.3.tar.xz

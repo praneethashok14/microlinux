@@ -4,6 +4,8 @@
 #
 #   ./scripts/build.sh                      build both architectures (incremental)
 #   ./scripts/build.sh --arch x86_64        build one: aarch64 | x86_64 | all
+#   ./scripts/build.sh --edition kde [--arch ...]
+#                                           the KDE edition (default: lxqt)
 #   ./scripts/build.sh --arch x86_64 <target>
 #                                           any Buildroot target, e.g. menuconfig,
 #                                           linux-rebuild, lxqt-panel-dirclean, savedefconfig
@@ -17,6 +19,11 @@ SRC="$PWD"
 VM=${VM:-builder}
 REPO_DIR=${REPO_DIR:-$(cd .. && pwd)/microlinux-repo}
 ARCHES="aarch64 x86_64"
+EDITION=lxqt
+if [ "$1" = --edition ]; then
+	case "$2" in lxqt|kde) EDITION=$2 ;; *) echo "unknown edition '$2' (lxqt, kde)"; exit 1 ;; esac
+	shift 2
+fi
 if [ "$1" = --arch ]; then
 	case "$2" in
 		all) ;;
@@ -31,7 +38,7 @@ limactl list -q 2>/dev/null | grep -qx "$VM" || { echo "Lima VM '$VM' missing - 
 # build ID (/etc/microlinux-build, BUILD-<arch>): what "mlpkg system-update" compares
 ML_BUILD_ID="$(date -u +%Y%m%d.%H%M)-$(git rev-parse --short HEAD 2>/dev/null || echo nogit)$(git diff --quiet HEAD 2>/dev/null || echo +)"
 
-limactl shell "$VM" env SRC="$SRC" ARCHES="$ARCHES" TARGET="$*" ML_BUILD_ID="$ML_BUILD_ID" bash -s <<'VMEOF'
+limactl shell "$VM" env SRC="$SRC" ARCHES="$ARCHES" EDITION="$EDITION" TARGET="$*" ML_BUILD_ID="$ML_BUILD_ID" bash -s <<'VMEOF'
 set -e
 W=/mnt/lima-mlbuild
 BR=$W/buildroot
@@ -48,16 +55,19 @@ if ! swapon --show=NAME --noheadings | grep -q "$W/swapfile"; then
 fi
 cd "$BR"
 for A in $ARCHES; do
-	# aarch64 keeps the original output directory, so existing builds stay incremental
-	if [ "$A" = aarch64 ]; then O=$W/out; else O=$W/out-$A; fi
+	# aarch64 keeps the original output directory, so existing builds stay incremental;
+	# the KDE edition: its own (out-kde-<arch>), files named kde-<arch>
+	if [ "$EDITION" = kde ]; then O=$W/out-kde-$A; DEFC=microlinux_kde_${A}_defconfig; TAG=kde-$A
+	elif [ "$A" = aarch64 ]; then O=$W/out; DEFC=microlinux_${A}_defconfig; TAG=$A
+	else O=$W/out-$A; DEFC=microlinux_${A}_defconfig; TAG=$A; fi
 	echo "===== MicroLinux $A ($O)"
 	if [ -n "$TARGET" ]; then
-		[ -f "$O/.config" ] || make O="$O" BR2_EXTERNAL="$W/src/external" microlinux_${A}_defconfig
+		[ -f "$O/.config" ] || make O="$O" BR2_EXTERNAL="$W/src/external" $DEFC
 		make O="$O" $TARGET
 		continue
 	fi
 	# the defconfig in the repo is the source of truth: re-apply it every build
-	make O="$O" BR2_EXTERNAL="$W/src/external" microlinux_${A}_defconfig >/dev/null
+	make O="$O" BR2_EXTERNAL="$W/src/external" $DEFC >/dev/null
 	# With per-package directories, target-finalize assembles target/ from the
 	# packages every time, but never deletes: start from an empty one so that
 	# renamed or removed overlay files and moved repository files can't linger.
@@ -88,17 +98,18 @@ for A in $ARCHES; do
 	fi
 	mkdir -p "$SRC/out"
 	# copy then rename, so a VM still running the previous ISO keeps its (old) file
-	for f in microlinux-$A.iso microlinux-$A-base.iso size-report.txt SHA256SUMS-$A SHA256SUMS-$A.asc SHA256SUMS-$A.sig BUILD-$A VERSION-$A ml-system-update; do
+	for f in microlinux-$TAG.iso microlinux-$TAG-base.iso size-report.txt SHA256SUMS-$TAG SHA256SUMS-$TAG.asc SHA256SUMS-$TAG.sig BUILD-$TAG VERSION-$TAG ml-system-update; do
 		[ -f "$O/images/$f" ] || continue
-		dst=$f; [ "$f" = size-report.txt ] && dst=size-report-$A.txt
+		dst=$f; [ "$f" = size-report.txt ] && dst=size-report-$TAG.txt
 		cp "$O/images/$f" "$SRC/out/.$dst.new" && mv -f "$SRC/out/.$dst.new" "$SRC/out/$dst"
 	done
-	rm -f "$SRC/out/update-$A-from-"*.tar.zst
-	for f in "$O/images/update-$A-from-"*.tar.zst; do
+	rm -f "$SRC/out/update-$TAG-from-"*.tar.zst
+	for f in "$O/images/update-$TAG-from-"*.tar.zst; do
 		[ -f "$f" ] && cp "$f" "$SRC/out/"
 	done
-	# package repository: handed over through out/ (the only folder the VM sees)
-	[ -f "$O/images/repo/INDEX" ] && rsync -a --delete "$O/images/repo/" "$SRC/out/.repo-$A/"
+	# package repository: handed over through out/ (the only folder the VM sees);
+	# it comes from the LXQt edition's build (the KDE edition uses the same one)
+	[ "$EDITION" = lxqt ] && [ -f "$O/images/repo/INDEX" ] && rsync -a --delete "$O/images/repo/" "$SRC/out/.repo-$A/"
 done
 [ -n "$TARGET" ] || ls -lh "$SRC/out/"
 VMEOF

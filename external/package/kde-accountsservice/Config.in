@@ -1,0 +1,8 @@
+config BR2_PACKAGE_KDE_ACCOUNTSSERVICE
+	bool "kde-accountsservice"
+	select BR2_PACKAGE_LIBGLIB2
+	select BR2_PACKAGE_POLKIT
+	select BR2_PACKAGE_KDE_ELOGIND
+	select BR2_PACKAGE_LIBXCRYPT
+	help
+	  accountsservice: user accounts over D-Bus, for SDDM and Plasma.

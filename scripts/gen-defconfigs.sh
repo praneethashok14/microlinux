@@ -9,7 +9,7 @@ C="$(dirname "$0")/../external/configs"
 # (microlinux_kde_<arch>_defconfig); each = arch + common + desktop + repo
 for f in "$C"/fragments/*.config; do
 	a=$(basename "$f" .config)
-	case "$a" in common|repo|lxqt|kde) continue ;; esac
+	case "$a" in common|repo|lxqt|kde|kde-packages) continue ;; esac
 	for e in lxqt kde; do
 		[ -f "$C/fragments/$e.config" ] || continue
 		if [ $e = lxqt ]; then out=microlinux_${a}_defconfig; else out=microlinux_${e}_${a}_defconfig; fi
@@ -23,6 +23,7 @@ for f in "$C"/fragments/*.config; do
 			cat "$C/fragments/common.config"
 			echo
 			cat "$C/fragments/$e.config"
+			[ $e != kde ] || cat "$C/fragments/kde-packages.config" 2>/dev/null
 			echo
 			cat "$C/fragments/repo.config"
 		} > "$C/$out.tmp"

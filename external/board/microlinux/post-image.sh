@@ -8,6 +8,9 @@ BOARD="$BR2_EXTERNAL_MICROLINUX_PATH/board/microlinux"
 T="$TARGET_DIR"
 H="$HOST_DIR"
 ARCH=$(sed -n 's/^BR2_ARCH="\(.*\)"/\1/p' "$BR2_CONFIG")
+# edition: the LXQt one's files are named after the architecture
+# (microlinux-x86_64.iso, BUILD-x86_64, ...), the KDE one's after kde-<arch>
+if grep -q '^BR2_PACKAGE_KDE_PLASMA_WORKSPACE=y' "$BR2_CONFIG"; then EDITION=kde TAG=kde-$ARCH; else EDITION=lxqt TAG=$ARCH; fi
 READELF="$H/bin/$ARCH-buildroot-linux-gnu-readelf"
 VERSION=$(cat "$T/etc/microlinux-release")
 export PATH="$H/bin:$H/sbin:$PATH"
@@ -314,18 +317,18 @@ mkiso() { # out dir
 		-o "$1" "$2"
 }
 iso_tree "$B/iso-full" yes
-mkiso "$B/microlinux-$ARCH.iso" "$B/iso-full"
+mkiso "$B/microlinux-$TAG.iso" "$B/iso-full"
 iso_tree "$B/iso-base" no
-mkiso "$B/microlinux-$ARCH-base.iso" "$B/iso-base"
+mkiso "$B/microlinux-$TAG-base.iso" "$B/iso-base"
 
 # small system update: the files that changed since the last release
 # (ML_RELEASE_BASE/<arch>/microlinux-<arch>-base.iso, kept by
 # scripts/mark-released.sh), for "mlpkg system-update" on systems running it
-cp "$T/etc/microlinux-build" "$B/BUILD-$ARCH"
+cp "$T/etc/microlinux-build" "$B/BUILD-$TAG"
 # the version number, shown by Settings > System Update
-cp "$T/etc/microlinux-release" "$B/VERSION-$ARCH"
-rm -f "$B/update-$ARCH-from-"*.tar.zst
-OLDISO="${ML_RELEASE_BASE:-/nonexistent}/$ARCH/microlinux-$ARCH-base.iso"
+cp "$T/etc/microlinux-release" "$B/VERSION-$TAG"
+rm -f "$B/update-$TAG-from-"*.tar.zst
+OLDISO="${ML_RELEASE_BASE:-/nonexistent}/$TAG/microlinux-$TAG-base.iso"
 UPD=
 if [ -f "$OLDISO" ]; then
 	OLD="$B/release-old"
@@ -339,13 +342,13 @@ if [ -f "$OLDISO" ]; then
 		echo "$key" > "$OLD/key"
 	fi
 	from=$(unsquashfs -cat "$OLD/rootfs.sqfs" etc/microlinux-build 2>/dev/null || true)
-	if [ "$from" != "$(cat "$B/BUILD-$ARCH")" ] && echo "$from" | grep -Eq '^[A-Za-z0-9._-]+$'; then
-		UPD="update-$ARCH-from-$from.tar.zst"
+	if [ "$from" != "$(cat "$B/BUILD-$TAG")" ] && echo "$from" | grep -Eq '^[A-Za-z0-9._-]+$'; then
+		UPD="update-$TAG-from-$from.tar.zst"
 		msg "small update from $from"
 		python3 "$BOARD/make-update.py" "$OLD/rootfs.sqfs" "$OLD/iso" "$B/rootfs.squashfs" "$B/iso-base" \
 			"$B/update-work" "$B/$UPD" | sed 's/^/  /'
 		# not worth it when it is nearly as big as the ISO
-		if [ $(stat -c %s "$B/$UPD") -gt $(($(stat -c %s "$B/microlinux-$ARCH-base.iso") * 7 / 10)) ]; then
+		if [ $(stat -c %s "$B/$UPD") -gt $(($(stat -c %s "$B/microlinux-$TAG-base.iso") * 7 / 10)) ]; then
 			msg "  too big, left out"; rm -f "$B/$UPD"; UPD=
 		fi
 	fi
@@ -356,18 +359,18 @@ fi
 # repository key (SHA256SUMS-<arch>.sig, which MicroLinux itself can check)
 # (and the updater itself: systems run the newest one, see ml-system-update)
 cp "$T/usr/libexec/ml-system-update" "$B/ml-system-update"
-( cd "$B" && sha256sum "microlinux-$ARCH.iso" "microlinux-$ARCH-base.iso" "BUILD-$ARCH" "VERSION-$ARCH" ml-system-update $UPD > "SHA256SUMS-$ARCH" )
-rm -f "$B/SHA256SUMS-$ARCH.sig"
+( cd "$B" && sha256sum "microlinux-$TAG.iso" "microlinux-$TAG-base.iso" "BUILD-$TAG" "VERSION-$TAG" ml-system-update $UPD > "SHA256SUMS-$TAG" )
+rm -f "$B/SHA256SUMS-$TAG.sig"
 if [ -f "$KEYS/repo/repo.key" ]; then
-	openssl dgst -sha256 -sign "$KEYS/repo/repo.key" -out "$B/SHA256SUMS-$ARCH.sig" "$B/SHA256SUMS-$ARCH"
-	openssl dgst -sha256 -verify "$BOARD/keys/repo.pub" -signature "$B/SHA256SUMS-$ARCH.sig" "$B/SHA256SUMS-$ARCH" >/dev/null
+	openssl dgst -sha256 -sign "$KEYS/repo/repo.key" -out "$B/SHA256SUMS-$TAG.sig" "$B/SHA256SUMS-$TAG"
+	openssl dgst -sha256 -verify "$BOARD/keys/repo.pub" -signature "$B/SHA256SUMS-$TAG.sig" "$B/SHA256SUMS-$TAG" >/dev/null
 fi
-rm -f "$B/SHA256SUMS-$ARCH.asc"
+rm -f "$B/SHA256SUMS-$TAG.asc"
 if [ -d "$KEYS/gpg" ]; then
-	GNUPGHOME="$KEYS/gpg" gpg --batch --quiet --armor --detach-sign --output "$B/SHA256SUMS-$ARCH.asc" "$B/SHA256SUMS-$ARCH"
-	msg "  SHA256SUMS-$ARCH signed"
+	GNUPGHOME="$KEYS/gpg" gpg --batch --quiet --armor --detach-sign --output "$B/SHA256SUMS-$TAG.asc" "$B/SHA256SUMS-$TAG"
+	msg "  SHA256SUMS-$TAG signed"
 else
-	echo "WARNING: $KEYS/gpg missing: SHA256SUMS-$ARCH not signed"
+	echo "WARNING: $KEYS/gpg missing: SHA256SUMS-$TAG not signed"
 fi
 
 # --- 4. size report -----------------------------------------------------------------
@@ -381,6 +384,6 @@ mib() { echo "$(( ($(stat -c %s "$1") + 524287) / 1048576 )) MiB"; }
 	echo "kernel modules         $(du -sm --apparent-size "$T/usr/lib/modules" | cut -f1) MiB (in rootfs)"
 	for f in "$P"/*.mlp; do printf '%-22s %s\n' "$(basename "$f")" "$(mib "$f")"; done
 	echo "repository             $(grep -c . "$R/INDEX") packages, $(du -sm "$R" | cut -f1) MiB"
-	echo "ISO (base)             $(mib "$B/microlinux-$ARCH-base.iso")"
-	echo "ISO (full)             $(mib "$B/microlinux-$ARCH.iso")"
+	echo "ISO (base)             $(mib "$B/microlinux-$TAG-base.iso")"
+	echo "ISO (full)             $(mib "$B/microlinux-$TAG.iso")"
 } | tee "$B/size-report.txt"

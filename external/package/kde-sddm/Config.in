@@ -1,0 +1,10 @@
+config BR2_PACKAGE_KDE_SDDM
+	bool "kde-sddm"
+	select BR2_PACKAGE_KDE_ELOGIND
+	select BR2_PACKAGE_LINUX_PAM
+	select BR2_PACKAGE_QT6DECLARATIVE
+	select BR2_PACKAGE_QT6DECLARATIVE_QUICK
+	select BR2_PACKAGE_QT6BASE_TEST
+	select BR2_PACKAGE_LIBXKBCOMMON
+	help
+	  SDDM 0.21, the login screen of the KDE edition.
