@@ -5,9 +5,9 @@ rootfs.sqfs (xz)       276 MiB
 rootfs uncompressed    902 MiB
 kernel modules         70 MiB (in rootfs)
 debian-runtime-13.7.mlp 20 MiB
-el10-runtime-10.2.mlp  22 MiB
+el10-runtime-10.2.mlp  23 MiB
 el7-runtime-7.9.2009.mlp 10 MiB
 firefox-153.6.0esr-2.mlp 97 MiB
-repository             141 packages, 701 MiB
+repository             141 packages, 702 MiB
 ISO (base)             300 MiB
-ISO (full)             449 MiB
+ISO (full)             451 MiB
